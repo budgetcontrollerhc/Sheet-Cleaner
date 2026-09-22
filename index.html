@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Ledger &mdash; Spreadsheet Cleaner</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#1D2A44">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="The Ledger">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --paper:#F5F1E6;
+    --paper-dark:#EDE7D6;
+    --ink:#1D2A44;
+    --ink-soft:#4A5568;
+    --rule:#C9C0AA;
+    --red:#9B3B2E;
+    --brass:#8C6A3F;
+    --brass-light:#B08D57;
+    --green-tick:#3F6B4A;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    background-image:
+      repeating-linear-gradient(transparent, transparent 27px, rgba(201,192,170,0.35) 28px);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    padding-bottom:80px;
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:0 24px;}
+
+  header.masthead{
+    padding:56px 24px 28px;
+    text-align:center;
+    border-bottom:2px solid var(--ink);
+    margin-bottom:8px;
+    position:relative;
+  }
+  header.masthead .eyebrow{
+    font-family:'IBM Plex Mono',monospace;
+    letter-spacing:0.18em;
+    text-transform:uppercase;
+    font-size:12px;
+    color:var(--brass);
+    margin-bottom:10px;
+  }
+  header.masthead h1{
+    font-family:'Fraunces',serif;
+    font-weight:700;
+    font-optical-sizing:auto;
+    font-size:clamp(36px,6vw,56px);
+    margin:0 0 8px;
+    letter-spacing:-0.01em;
+  }
+  header.masthead p{
+    font-size:15px;
+    color:var(--ink-soft);
+    max-width:480px;
+    margin:0 auto;
+    line-height:1.55;
+  }
+  .volume-tag{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--ink-soft);
+    letter-spacing:0.08em;
+    margin-top:18px;
+  }
+
+  section{margin-top:44px;}
+  .section-label{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--brass);
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:14px;
+  }
+  .section-label::after{
+    content:'';
+    flex:1;
+    height:1px;
+    background:var(--rule);
+  }
+
+  /* Dropzone */
+  #dropzone{
+    border:2px dashed var(--rule);
+    background:rgba(255,255,255,0.35);
+    border-radius:2px;
+    padding:44px 24px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .15s, background .15s;
+  }
+  #dropzone:hover, #dropzone.drag{
+    border-color:var(--brass);
+    background:rgba(176,141,87,0.08);
+  }
+  #dropzone .icon{
+    font-family:'Fraunces',serif;
+    font-size:34px;
+    color:var(--brass);
+    margin-bottom:6px;
+  }
+  #dropzone .primary{font-size:15px;font-weight:600;}
+  #dropzone .secondary{font-size:13px;color:var(--ink-soft);margin-top:4px;}
+  #fileInput{display:none;}
+
+  .file-chip{
+    display:inline-flex;align-items:center;gap:10px;
+    background:#fff;border:1px solid var(--rule);
+    padding:8px 14px;border-radius:2px;
+    font-family:'IBM Plex Mono',monospace;font-size:13px;
+    margin-top:14px;
+  }
+  .file-chip button{
+    border:none;background:none;color:var(--red);cursor:pointer;font-size:13px;font-family:inherit;
+  }
+
+  /* Column config */
+  .col-table{width:100%;border-collapse:collapse;font-size:14px;background:rgba(255,255,255,0.4);}
+  .col-table th{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;text-transform:uppercase;letter-spacing:0.06em;
+    color:var(--ink-soft);text-align:left;padding:8px 10px;
+    border-bottom:2px solid var(--ink);
+  }
+  .col-table td{padding:9px 10px;border-bottom:1px solid var(--rule);}
+  .col-table tr:nth-child(even){background:rgba(201,192,170,0.15);}
+  .col-name{font-weight:600;}
+  .col-table input[type=checkbox]{accent-color:var(--brass);width:16px;height:16px;cursor:pointer;}
+  .col-table input[type=radio]{accent-color:var(--red);width:16px;height:16px;cursor:pointer;}
+  td.center{text-align:center;}
+
+  details.advanced{margin-top:20px;}
+  details.advanced summary{
+    cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:12px;
+    letter-spacing:0.08em;text-transform:uppercase;color:var(--brass);
+  }
+  .adv-body{
+    margin-top:14px;padding:16px;background:rgba(255,255,255,0.4);
+    border:1px solid var(--rule);display:grid;gap:14px;
+  }
+  .adv-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:13px;}
+  .adv-row label{color:var(--ink-soft);}
+  select,input[type=text],input[type=number]{
+    font-family:'Inter',sans-serif;font-size:13px;padding:6px 8px;
+    border:1px solid var(--rule);border-radius:2px;background:#fff;color:var(--ink);
+  }
+  .col-table select{font-size:12.5px;padding:4px 6px;}
+  .col-table input[type=number]{width:56px;font-size:12.5px;padding:4px 6px;}
+  .small-btn{
+    font-family:'IBM Plex Mono',monospace;font-size:12px;
+    border:1px solid var(--ink);background:#fff;color:var(--ink);
+    padding:6px 12px;cursor:pointer;border-radius:2px;
+  }
+  .small-btn:hover{background:var(--ink);color:#fff;}
+
+  .primary-btn{
+    font-family:'Fraunces',serif;font-weight:600;font-size:17px;
+    background:var(--ink);color:var(--paper);border:none;
+    padding:14px 30px;border-radius:2px;cursor:pointer;
+    letter-spacing:0.01em;
+  }
+  .primary-btn:hover{background:var(--red);}
+  .primary-btn:disabled{background:var(--rule);color:#8a8a8a;cursor:not-allowed;}
+
+  /* Tally / stats */
+  .tally{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:0;
+    border:1px solid var(--ink);
+  }
+  .tally .cell{
+    padding:16px 14px;border-right:1px solid var(--rule);text-align:center;
+  }
+  .tally .cell:last-child{border-right:none;}
+  .tally .num{font-family:'Fraunces',serif;font-weight:700;font-size:28px;}
+  .tally .num.removed{color:var(--red);}
+  .tally .num.kept{color:var(--green-tick);}
+  .tally .lbl{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-soft);margin-top:4px;}
+
+  /* Preview table */
+  .preview-wrap{overflow-x:auto;border:1px solid var(--ink);margin-top:18px;max-height:420px;overflow-y:auto;}
+  table.preview{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:12.5px;white-space:nowrap;}
+  table.preview thead th{
+    position:sticky;top:0;background:var(--ink);color:var(--paper);
+    padding:9px 12px;text-align:left;font-weight:500;
+  }
+  table.preview td{padding:7px 12px;border-bottom:1px solid var(--rule);}
+  table.preview tr:nth-child(even){background:rgba(201,192,170,0.18);}
+
+  .download-row{display:flex;align-items:center;gap:22px;margin-top:26px;flex-wrap:wrap;}
+  .stamp{
+    width:92px;height:92px;border:3px solid var(--red);border-radius:50%;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    transform:rotate(-8deg);color:var(--red);font-family:'IBM Plex Mono',monospace;
+    font-size:11px;letter-spacing:0.05em;text-transform:uppercase;font-weight:600;
+    opacity:0;transition:opacity .4s;
+    line-height:1.3;
+  }
+  .stamp.show{opacity:0.85;}
+
+  footer{
+    text-align:center;margin-top:70px;font-family:'IBM Plex Mono',monospace;
+    font-size:11px;color:var(--ink-soft);letter-spacing:0.04em;
+  }
+
+  .hidden{display:none !important;}
+
+  @media (max-width:640px){
+    .tally{grid-template-columns:repeat(2,1fr);}
+    .tally .cell:nth-child(2){border-right:none;}
+  }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="eyebrow">Register &middot; Reconciliation Tool</div>
+  <h1>The Ledger</h1>
+  <p>Upload a spreadsheet with repeated headings, stray blank rows, or columns you no longer need &mdash; get back a clean, renumbered register.</p>
+  <div class="volume-tag">accepts .xlsx &middot; .xls &middot; .ods &middot; .csv</div>
+</header>
+
+<div class="wrap">
+
+  <section id="uploadSection">
+    <div class="section-label">Step 1 &nbsp;&mdash;&nbsp; Intake</div>
+    <div id="dropzone">
+      <div class="icon">&#9998;</div>
+      <div class="primary">Drop a file here, or click to browse</div>
+      <div class="secondary">The first row of your first sheet is treated as the heading row</div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.ods,.csv">
+    </div>
+    <div id="fileChipHolder"></div>
+  </section>
+
+  <section id="configSection" class="hidden">
+    <div class="section-label">Step 2 &nbsp;&mdash;&nbsp; Mark the columns</div>
+    <table class="col-table">
+      <thead>
+        <tr>
+          <th>Column</th>
+          <th class="center">Remove</th>
+          <th class="center">Renumber<br>(serial no.)</th>
+          <th class="center">Format</th>
+          <th class="center">Decimals</th>
+        </tr>
+      </thead>
+      <tbody id="colConfigBody"></tbody>
+    </table>
+
+    <div class="section-label" style="margin-top:34px;">Step 2b &nbsp;&mdash;&nbsp; Rows to delete</div>
+    <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
+      Build one or more conditions. A row is deleted if <em>every</em> column inside a single condition is blank or zero for that row.
+      Add several conditions to cover different combinations &mdash; a row is dropped if it matches <em>any</em> one of them.
+    </p>
+    <div id="ruleBuilderCols" style="display:flex;flex-wrap:wrap;gap:8px 18px;padding:14px;background:rgba(255,255,255,0.4);border:1px solid var(--rule);"></div>
+    <div style="margin-top:12px;">
+      <button class="small-btn" id="addRuleBtn">Add this combination as a delete condition</button>
+    </div>
+    <div id="rulesList" style="margin-top:14px;font-size:13px;color:var(--ink-soft);"></div>
+
+    <div class="section-label" style="margin-top:34px;">Step 2c &nbsp;&mdash;&nbsp; Computed columns</div>
+    <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
+      Click columns below to drop them into the formula box, then combine them with +, &minus;, *, /, and parentheses.
+      Example: <code>{Amount Spent} / {Amount Already Alloted by the High Court} * 100</code>
+    </p>
+    <div id="formulaColButtons" style="display:flex;flex-wrap:wrap;gap:8px;padding:14px;background:rgba(255,255,255,0.4);border:1px solid var(--rule);"></div>
+    <div class="adv-row" style="margin-top:12px;">
+      <input type="text" id="formulaExpr" placeholder="e.g. {Amount Spent} / {Amount Already Alloted by the High Court} * 100" style="flex:1;min-width:260px;">
+    </div>
+    <div class="adv-row">
+      <label>new column name</label>
+      <input type="text" id="formulaName" placeholder="Percentage Spent" style="width:200px;">
+      <label>decimals</label>
+      <input type="number" id="formulaDecimals" min="0" max="6" value="2" style="width:56px;">
+      <button class="small-btn" id="addFormulaBtn">Add computed column</button>
+    </div>
+    <div id="formulaList" style="margin-top:10px;font-size:13px;color:var(--ink-soft);"></div>
+
+    <details class="advanced">
+      <summary>Advanced &mdash; merge or split columns</summary>
+      <div class="adv-body">
+        <div class="adv-row">
+          <strong style="width:100%;font-size:12px;color:var(--ink);">Merge two columns</strong>
+          <select id="mergeColA"></select>
+          <span>+</span>
+          <select id="mergeColB"></select>
+          <label>separator</label>
+          <input type="text" id="mergeSep" value=" - " style="width:60px;">
+          <label>new name</label>
+          <input type="text" id="mergeName" placeholder="Combined column" style="width:160px;">
+          <button class="small-btn" id="addMergeBtn">Add merge</button>
+        </div>
+        <div id="mergeList" style="font-size:12px;color:var(--ink-soft);"></div>
+
+        <div class="adv-row" style="border-top:1px solid var(--rule);padding-top:12px;">
+          <strong style="width:100%;font-size:12px;color:var(--ink);">Split one column</strong>
+          <select id="splitCol"></select>
+          <label>delimiter</label>
+          <input type="text" id="splitDelim" value="," style="width:50px;">
+          <button class="small-btn" id="addSplitBtn">Add split</button>
+        </div>
+        <div id="splitList" style="font-size:12px;color:var(--ink-soft);"></div>
+      </div>
+    </details>
+
+    <div style="margin-top:26px;">
+      <button class="primary-btn" id="processBtn">Clean the sheet</button>
+    </div>
+  </section>
+
+  <section id="resultSection" class="hidden">
+    <div class="section-label">Step 3 &nbsp;&mdash;&nbsp; The clean copy</div>
+
+    <div class="tally">
+      <div class="cell"><div class="num" id="tallyBefore">0</div><div class="lbl">rows read</div></div>
+      <div class="cell"><div class="num removed" id="tallyHeaders">0</div><div class="lbl">repeated headings removed</div></div>
+      <div class="cell"><div class="num removed" id="tallyBlank">0</div><div class="lbl">blank / zero rows removed</div></div>
+      <div class="cell"><div class="num kept" id="tallyAfter">0</div><div class="lbl">rows remaining</div></div>
+    </div>
+
+    <div class="preview-wrap">
+      <table class="preview" id="previewTable"></table>
+    </div>
+
+    <div class="download-row">
+      <button class="primary-btn" id="downloadBtn">Download cleaned .xlsx</button>
+      <div class="stamp" id="stamp">Register<br>Verified</div>
+    </div>
+  </section>
+
+</div>
+
+<footer>Ledger Cleaner &middot; processing happens in your browser, nothing is uploaded to a server</footer>
+
+<script>
+(function(){
+  let rawRows = [];       // array of arrays, row 0 = header
+  let headers = [];       // array of strings
+  let colConfig = [];     // {name, remove, serial, format, decimals}
+  let merges = [];        // {a, b, sep, name}
+  let splits = [];        // {col, delim}
+  let rules = [];          // [{cols:[idx,...]}]
+  let formulas = [];       // [{name, expr, decimals}]
+  let cleanedHeaders = [];
+  let cleanedRows = [];
+
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const fileChipHolder = document.getElementById('fileChipHolder');
+  const configSection = document.getElementById('configSection');
+  const resultSection = document.getElementById('resultSection');
+  const colConfigBody = document.getElementById('colConfigBody');
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault(); dropzone.classList.remove('drag');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', e => {
+    if (e.target.files.length) handleFile(e.target.files[0]);
+  });
+
+  function handleFile(file){
+    const reader = new FileReader();
+    reader.onload = function(evt){
+      const data = new Uint8Array(evt.target.result);
+      const wb = XLSX.read(data, { type: 'array', cellDates: false });
+      const sheetName = wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+      if (!aoa.length){ alert('Could not find any rows in the first sheet.'); return; }
+      rawRows = aoa;
+      headers = aoa[0].map(h => String(h).trim());
+      buildColumnConfig();
+      showFileChip(file.name, aoa.length - 1);
+      configSection.classList.remove('hidden');
+      resultSection.classList.add('hidden');
+      configSection.scrollIntoView({behavior:'smooth', block:'start'});
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function showFileChip(name, rowCount){
+    fileChipHolder.innerHTML = '';
+    const chip = document.createElement('div');
+    chip.className = 'file-chip';
+    chip.innerHTML = `<span>&#128196; ${name} &nbsp;&middot;&nbsp; ${rowCount} rows</span> <button type="button">change</button>`;
+    chip.querySelector('button').addEventListener('click', () => fileInput.click());
+    fileChipHolder.appendChild(chip);
+  }
+
+  function guessNumericColumn(colIdx){
+    let numeric = 0, total = 0;
+    for (let r = 1; r < Math.min(rawRows.length, 60); r++){
+      const v = rawRows[r] ? rawRows[r][colIdx] : undefined;
+      if (v === undefined || v === '') continue;
+      total++;
+      if (!isNaN(parseFloat(v))) numeric++;
+    }
+    return total > 0 && numeric / total > 0.6;
+  }
+
+  function buildColumnConfig(){
+    colConfig = headers.map((h, i) => ({
+      name: h || `Column ${i+1}`,
+      remove: false,
+      serial: /^(sl\.?\s*no\.?|s\.?\s*no\.?|serial)/i.test(h),
+      format: 'none',
+      decimals: 2
+    }));
+    // ensure only one serial column defaults true (first match)
+    let foundSerial = false;
+    colConfig.forEach(c => {
+      if (c.serial){
+        if (foundSerial) c.serial = false; else foundSerial = true;
+      }
+    });
+    renderColConfig();
+    populateMergeSplitSelects();
+    merges = [];
+    splits = [];
+    renderMergeList();
+    renderSplitList();
+
+    // rule builder: default one condition using auto-detected numeric columns
+    rules = [];
+    renderRuleBuilder();
+    const autoCols = colConfig.map((c,i) => i).filter(i => guessNumericColumn(i));
+    if (autoCols.length) rules.push({ cols: autoCols });
+    renderRulesList();
+
+    // formula builder: reset for the new file
+    formulas = [];
+    renderFormulaColButtons();
+    renderFormulaList();
+  }
+
+  function renderColConfig(){
+    colConfigBody.innerHTML = '';
+    colConfig.forEach((c, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="col-name">${c.name}</td>
+        <td class="center"><input type="checkbox" data-idx="${i}" data-field="remove" ${c.remove ? 'checked':''}></td>
+        <td class="center"><input type="radio" name="serialCol" data-idx="${i}" data-field="serial" ${c.serial ? 'checked':''}></td>
+        <td class="center">
+          <select data-idx="${i}" data-field="format">
+            <option value="none" ${c.format==='none'?'selected':''}>No change</option>
+            <option value="titlecase" ${c.format==='titlecase'?'selected':''}>Title Case</option>
+            <option value="uppercase" ${c.format==='uppercase'?'selected':''}>UPPERCASE</option>
+            <option value="lowercase" ${c.format==='lowercase'?'selected':''}>lowercase</option>
+            <option value="trim" ${c.format==='trim'?'selected':''}>Trim spaces</option>
+            <option value="round" ${c.format==='round'?'selected':''}>Round number</option>
+          </select>
+        </td>
+        <td class="center"><input type="number" min="0" max="6" data-idx="${i}" data-field="decimals" value="${c.decimals}" ${c.format==='round' ? '' : 'disabled'}></td>
+      `;
+      colConfigBody.appendChild(tr);
+    });
+    colConfigBody.querySelectorAll('input[type=checkbox]').forEach(inp => {
+      inp.addEventListener('change', e => {
+        const idx = +e.target.dataset.idx, field = e.target.dataset.field;
+        colConfig[idx][field] = e.target.checked;
+      });
+    });
+    colConfigBody.querySelectorAll('input[type=radio]').forEach(inp => {
+      inp.addEventListener('change', e => {
+        const idx = +e.target.dataset.idx;
+        colConfig.forEach((c, i) => c.serial = (i === idx));
+      });
+    });
+    colConfigBody.querySelectorAll('select[data-field=format]').forEach(sel => {
+      sel.addEventListener('change', e => {
+        const idx = +e.target.dataset.idx;
+        colConfig[idx].format = e.target.value;
+        const decInput = colConfigBody.querySelector(`input[data-field=decimals][data-idx="${idx}"]`);
+        if (decInput) decInput.disabled = (e.target.value !== 'round');
+      });
+    });
+    colConfigBody.querySelectorAll('input[data-field=decimals]').forEach(inp => {
+      inp.addEventListener('change', e => {
+        const idx = +e.target.dataset.idx;
+        colConfig[idx].decimals = Math.max(0, Math.min(6, +e.target.value || 0));
+      });
+    });
+  }
+
+  function renderRuleBuilder(){
+    const holder = document.getElementById('ruleBuilderCols');
+    holder.innerHTML = colConfig.map((c,i) => `
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
+        <input type="checkbox" class="rule-col-check" value="${i}"> ${c.name}
+      </label>
+    `).join('');
+  }
+
+  document.getElementById('addRuleBtn').addEventListener('click', () => {
+    const checked = Array.from(document.querySelectorAll('.rule-col-check:checked')).map(el => +el.value);
+    if (!checked.length){ alert('Tick at least one column for this condition.'); return; }
+    rules.push({ cols: checked });
+    document.querySelectorAll('.rule-col-check').forEach(el => el.checked = false);
+    renderRulesList();
+  });
+
+  function renderRulesList(){
+    const el = document.getElementById('rulesList');
+    if (!rules.length){
+      el.innerHTML = '<em>No delete conditions defined &mdash; no rows will be removed for being blank/zero.</em>';
+      return;
+    }
+    el.innerHTML = rules.map((r,i) => {
+      const names = r.cols.map(ci => colConfig[ci] ? colConfig[ci].name : '?').join(', ');
+      return `&#8226; Delete row if <strong>${names}</strong> are all blank/zero &nbsp;<button class="small-btn" data-i="${i}" style="padding:2px 8px;">remove</button>`;
+    }).join('<br>');
+    el.querySelectorAll('button').forEach(b => b.addEventListener('click', e => {
+      rules.splice(+e.target.dataset.i, 1); renderRulesList();
+    }));
+  }
+
+  function renderFormulaColButtons(){
+    const holder = document.getElementById('formulaColButtons');
+    holder.innerHTML = colConfig.map(c => `<button type="button" class="small-btn formula-col-btn" data-name="${c.name.replace(/"/g,'&quot;')}">${c.name}</button>`).join('');
+    holder.querySelectorAll('.formula-col-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const input = document.getElementById('formulaExpr');
+        const token = `{${btn.dataset.name}}`;
+        const start = input.selectionStart != null ? input.selectionStart : input.value.length;
+        const end = input.selectionEnd != null ? input.selectionEnd : input.value.length;
+        input.value = input.value.slice(0, start) + token + input.value.slice(end);
+        input.focus();
+        const pos = start + token.length;
+        input.setSelectionRange(pos, pos);
+      });
+    });
+  }
+
+  document.getElementById('addFormulaBtn').addEventListener('click', () => {
+    const expr = document.getElementById('formulaExpr').value.trim();
+    const name = document.getElementById('formulaName').value.trim();
+    const decimals = Math.max(0, Math.min(6, +document.getElementById('formulaDecimals').value || 0));
+    if (!expr){ alert('Click columns above to build a formula first.'); return; }
+    if (!name){ alert('Give the new column a name.'); return; }
+    formulas.push({ name, expr, decimals });
+    document.getElementById('formulaExpr').value = '';
+    document.getElementById('formulaName').value = '';
+    renderFormulaList();
+  });
+
+  function renderFormulaList(){
+    const el = document.getElementById('formulaList');
+    el.innerHTML = formulas.map((f,i) => `&#8226; <strong>${f.name}</strong> = ${f.expr} <span style="opacity:.7;">(${f.decimals} dp)</span> &nbsp;<button class="small-btn" data-i="${i}" style="padding:2px 8px;">remove</button>`).join('<br>');
+    el.querySelectorAll('button').forEach(b => b.addEventListener('click', e => {
+      formulas.splice(+e.target.dataset.i, 1); renderFormulaList();
+    }));
+  }
+
+  function populateMergeSplitSelects(){
+    const opts = colConfig.map((c,i) => `<option value="${i}">${c.name}</option>`).join('');
+    document.getElementById('mergeColA').innerHTML = opts;
+    document.getElementById('mergeColB').innerHTML = opts;
+    document.getElementById('splitCol').innerHTML = opts;
+  }
+
+  document.getElementById('addMergeBtn').addEventListener('click', () => {
+    const a = +document.getElementById('mergeColA').value;
+    const b = +document.getElementById('mergeColB').value;
+    const sep = document.getElementById('mergeSep').value;
+    const name = document.getElementById('mergeName').value.trim() || `${colConfig[a].name} + ${colConfig[b].name}`;
+    if (a === b){ alert('Choose two different columns to merge.'); return; }
+    merges.push({ a, b, sep, name });
+    renderMergeList();
+  });
+  function renderMergeList(){
+    const el = document.getElementById('mergeList');
+    el.innerHTML = merges.map((m,i) => `&#8226; "${colConfig[m.a].name}" + "${colConfig[m.b].name}" &rarr; "${m.name}" <button class="small-btn" data-i="${i}" style="padding:2px 8px;">remove</button>`).join('<br>');
+    el.querySelectorAll('button').forEach(b => b.addEventListener('click', e => {
+      merges.splice(+e.target.dataset.i, 1); renderMergeList();
+    }));
+  }
+
+  document.getElementById('addSplitBtn').addEventListener('click', () => {
+    const col = +document.getElementById('splitCol').value;
+    const delim = document.getElementById('splitDelim').value;
+    if (!delim){ alert('Enter a delimiter to split on.'); return; }
+    splits.push({ col, delim });
+    renderSplitList();
+  });
+  function renderSplitList(){
+    const el = document.getElementById('splitList');
+    el.innerHTML = splits.map((s,i) => `&#8226; split "${colConfig[s.col].name}" on "${s.delim}" <button class="small-btn" data-i="${i}" style="padding:2px 8px;">remove</button>`).join('<br>');
+    el.querySelectorAll('button').forEach(b => b.addEventListener('click', e => {
+      splits.splice(+e.target.dataset.i, 1); renderSplitList();
+    }));
+  }
+
+  function isBlankOrZero(v){
+    if (v === null || v === undefined) return true;
+    const s = String(v).trim();
+    if (s === '') return true;
+    const n = parseFloat(s);
+    if (!isNaN(n) && n === 0 && /^-?\d+(\.\d+)?$/.test(s)) return true;
+    return false;
+  }
+
+  function formatValue(v, cfg){
+    if (v === undefined || v === null || v === '') return v;
+    const s = String(v);
+    switch(cfg.format){
+      case 'titlecase':
+        return s.toLowerCase().replace(/\b\w/g, ch => ch.toUpperCase());
+      case 'uppercase':
+        return s.toUpperCase();
+      case 'lowercase':
+        return s.toLowerCase();
+      case 'trim':
+        return s.trim();
+      case 'round': {
+        const n = parseFloat(s.replace(/,/g,''));
+        if (isNaN(n)) return v;
+        return Number(n.toFixed(cfg.decimals));
+      }
+      default:
+        return v;
+    }
+  }
+
+  // Evaluate a formula string containing {Column Name} tokens against one row.
+  // Longest header names are substituted first so partial name overlaps don't corrupt the expression.
+  function evalFormula(expr, headersArr, row){
+    let s = expr;
+    const sorted = headersArr.map((h,i) => ({h,i})).sort((a,b) => b.h.length - a.h.length);
+    sorted.forEach(({h,i}) => {
+      const token = `{${h}}`;
+      if (s.includes(token)){
+        const raw = row[i];
+        let num = 0;
+        if (raw !== undefined && raw !== null && raw !== ''){
+          const cleaned = String(raw).replace(/,/g,'').trim();
+          const parsed = parseFloat(cleaned);
+          if (!isNaN(parsed)) num = parsed;
+        }
+        s = s.split(token).join('(' + num + ')');
+      }
+    });
+    if (!/^[0-9+\-*/().\s]+$/.test(s)) return '';
+    try {
+      const result = Function('"use strict"; return (' + s + ')')();
+      return (typeof result === 'number' && isFinite(result)) ? result : '';
+    } catch(e){
+      return '';
+    }
+  }
+
+  document.getElementById('processBtn').addEventListener('click', processSheet);
+
+  function processSheet(){
+    const dataRows = rawRows.slice(1);
+    const headerJoined = headers.join('|').toLowerCase();
+
+    // 1. remove repeated header rows
+    let repeatedHeaderCount = 0;
+    let rows = dataRows.filter(r => {
+      const joined = headers.map((h, i) => String(r[i] !== undefined ? r[i] : '').trim()).join('|').toLowerCase();
+      const isRepeat = joined === headerJoined;
+      if (isRepeat) repeatedHeaderCount++;
+      return !isRepeat;
+    });
+
+    // 2. remove rows matching ANY defined delete-condition (each condition = a set of
+    //    columns that must ALL be blank/zero for that row to be dropped)
+    let blankCount = 0;
+    if (rules.length){
+      rows = rows.filter(r => {
+        const matchesAnyRule = rules.some(rule => rule.cols.every(i => isBlankOrZero(r[i])));
+        if (matchesAnyRule) blankCount++;
+        return !matchesAnyRule;
+      });
+    }
+
+    // build working header/row list keyed by original column index
+    let workingHeaders = colConfig.map(c => c.name);
+    let workingRows = rows.map(r => workingHeaders.map((h,i) => r[i] !== undefined ? r[i] : ''));
+
+    // 3. merges
+    merges.forEach(m => {
+      const newCol = [];
+      workingRows.forEach(r => {
+        const va = r[m.a] !== undefined ? String(r[m.a]) : '';
+        const vb = r[m.b] !== undefined ? String(r[m.b]) : '';
+        newCol.push(va + m.sep + vb);
+      });
+      const insertAt = Math.min(m.a, m.b);
+      const removeIdxs = [m.a, m.b].sort((x,y)=>y-x);
+      workingHeaders.splice(insertAt, 0, m.name);
+      workingRows.forEach((r, ri) => r.splice(insertAt, 0, newCol[ri]));
+      removeIdxs.forEach(ri => {
+        const adjusted = ri >= insertAt ? ri + 1 : ri;
+        workingHeaders.splice(adjusted, 1);
+        workingRows.forEach(r => r.splice(adjusted, 1));
+      });
+    });
+
+    // 4. splits
+    splits.forEach(s => {
+      const colIdx = s.col;
+      if (colIdx >= workingHeaders.length) return;
+      const partsPerRow = workingRows.map(r => String(r[colIdx] !== undefined ? r[colIdx] : '').split(s.delim));
+      const maxParts = Math.max(1, ...partsPerRow.map(p => p.length));
+      const baseName = workingHeaders[colIdx];
+      const newNames = [];
+      for (let p = 0; p < maxParts; p++) newNames.push(`${baseName} (${p+1})`);
+      workingHeaders.splice(colIdx, 1, ...newNames);
+      workingRows.forEach((r, ri) => {
+        const parts = partsPerRow[ri];
+        const vals = newNames.map((_, p) => (parts[p] !== undefined ? parts[p].trim() : ''));
+        r.splice(colIdx, 1, ...vals);
+      });
+    });
+
+    // 5. computed formula columns — evaluated against whatever columns exist at this point,
+    //    so a formula can reference a column even if that column gets removed in the next step,
+    //    and each formula can in turn reference an earlier formula's output column
+    formulas.forEach(f => {
+      const headerSnapshot = workingHeaders.slice();
+      const values = workingRows.map(r => {
+        const result = evalFormula(f.expr, headerSnapshot, r);
+        return result === '' ? '' : Number(result.toFixed(f.decimals));
+      });
+      workingHeaders.push(f.name);
+      workingRows.forEach((r, ri) => { r.push(values[ri]); });
+    });
+
+    // 6. remove columns marked for removal (recompute by name since merges/splits/formulas may have shifted positions)
+    const removeNames = colConfig.filter(c => c.remove).map(c => c.name);
+    removeNames.forEach(name => {
+      const idx = workingHeaders.indexOf(name);
+      if (idx >= 0){
+        workingHeaders.splice(idx, 1);
+        workingRows.forEach(r => r.splice(idx, 1));
+      }
+    });
+
+    // 7. apply per-column formatting (title case / upper / lower / trim / round)
+    colConfig.forEach(c => {
+      if (c.format === 'none') return;
+      const idx = workingHeaders.indexOf(c.name);
+      if (idx < 0) return;
+      workingRows.forEach(r => { r[idx] = formatValue(r[idx], c); });
+    });
+
+    // 8. renumber serial column
+    const serialCfg = colConfig.find(c => c.serial);
+    if (serialCfg && !removeNames.includes(serialCfg.name)){
+      const idx = workingHeaders.indexOf(serialCfg.name);
+      if (idx >= 0){
+        workingRows.forEach((r, i) => { r[idx] = i + 1; });
+      }
+    }
+
+    cleanedHeaders = workingHeaders;
+    cleanedRows = workingRows;
+
+    document.getElementById('tallyBefore').textContent = dataRows.length;
+    document.getElementById('tallyHeaders').textContent = repeatedHeaderCount;
+    document.getElementById('tallyBlank').textContent = blankCount;
+    document.getElementById('tallyAfter').textContent = cleanedRows.length;
+
+    renderPreview();
+    resultSection.classList.remove('hidden');
+    document.getElementById('stamp').classList.remove('show');
+    resultSection.scrollIntoView({behavior:'smooth', block:'start'});
+  }
+
+  function renderPreview(){
+    const table = document.getElementById('previewTable');
+    const maxRows = 200;
+    let html = '<thead><tr>' + cleanedHeaders.map(h => `<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+    cleanedRows.slice(0, maxRows).forEach(r => {
+      html += '<tr>' + r.map(v => `<td>${v === undefined || v === null ? '' : v}</td>`).join('') + '</tr>';
+    });
+    html += '</tbody>';
+    table.innerHTML = html;
+    if (cleanedRows.length > maxRows){
+      const note = document.createElement('div');
+      note.style.cssText = 'padding:8px 12px;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--ink-soft);';
+      note.textContent = `Showing first ${maxRows} of ${cleanedRows.length} rows. The full set is included in the download.`;
+      table.parentElement.appendChild(note);
+    }
+  }
+
+  document.getElementById('downloadBtn').addEventListener('click', () => {
+    // convert numeric-looking text back into real numbers so Excel treats them
+    // as numbers (sortable/summable), not text
+    function coerceIfNumeric(v){
+      if (typeof v === 'number' || v instanceof Date) return v;
+      if (typeof v !== 'string') return v;
+      const s = v.trim();
+      if (s === '') return v;
+      const cleaned = s.replace(/,/g, '');
+      if (/^-?\d+(\.\d+)?$/.test(cleaned)) return Number(cleaned);
+      return v;
+    }
+
+    const aoa = [cleanedHeaders, ...cleanedRows.map(r => r.map(coerceIfNumeric))];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // give columns that were explicitly rounded (or computed formula columns) a
+    // clean fixed-decimal display format, rather than baking decimals into text
+    const decimalCols = [];
+    colConfig.forEach(c => {
+      if (c.format === 'round'){
+        const idx = cleanedHeaders.indexOf(c.name);
+        if (idx >= 0) decimalCols.push({ idx, decimals: c.decimals });
+      }
+    });
+    formulas.forEach(f => {
+      const idx = cleanedHeaders.indexOf(f.name);
+      if (idx >= 0) decimalCols.push({ idx, decimals: f.decimals });
+    });
+    decimalCols.forEach(({ idx, decimals }) => {
+      const numFmt = decimals > 0 ? ('0.' + '0'.repeat(decimals)) : '0';
+      for (let rIdx = 0; rIdx < cleanedRows.length; rIdx++){
+        const addr = XLSX.utils.encode_cell({ r: rIdx + 1, c: idx });
+        if (ws[addr] && typeof ws[addr].v === 'number') ws[addr].z = numFmt;
+      }
+    });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Cleaned Data');
+    XLSX.writeFile(wb, 'Cleaned_Sheet.xlsx');
+    document.getElementById('stamp').classList.add('show');
+  });
+
+  // Register service worker for installability + offline app-shell caching.
+  // Guarded to http(s) only — a local file:// copy skips this silently.
+  if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+  }
+})();
+</script>
+
+</body>
+</html>
