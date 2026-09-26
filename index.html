@@ -4,14 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Ledger &mdash; Spreadsheet Cleaner</title>
-<link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#1D2A44">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="The Ledger">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -252,6 +244,18 @@
 
   <section id="configSection" class="hidden">
     <div class="section-label">Step 2 &nbsp;&mdash;&nbsp; Mark the columns</div>
+
+    <div id="templateBar" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 14px;background:rgba(255,255,255,0.4);border:1px solid var(--rule);margin-bottom:16px;">
+      <select id="templateSelect" style="min-width:180px;"><option value="">No template</option></select>
+      <button class="small-btn" id="applyTemplateBtn">Apply</button>
+      <button class="small-btn" id="deleteTemplateBtn">Delete</button>
+      <span style="flex:1;"></span>
+      <input type="text" id="templateNameInput" placeholder="Template name" style="width:160px;">
+      <button class="small-btn" id="saveTemplateBtn">Save as template</button>
+      <button class="small-btn" id="exportTemplateBtn">Export file</button>
+      <label class="small-btn" style="cursor:pointer;">Import file<input type="file" id="importTemplateInput" accept=".json" style="display:none;"></label>
+    </div>
+
     <table class="col-table">
       <thead>
         <tr>
@@ -260,6 +264,7 @@
           <th class="center">Renumber<br>(serial no.)</th>
           <th class="center">Format</th>
           <th class="center">Decimals</th>
+          <th>Rename to</th>
         </tr>
       </thead>
       <tbody id="colConfigBody"></tbody>
@@ -293,6 +298,16 @@
       <button class="small-btn" id="addFormulaBtn">Add computed column</button>
     </div>
     <div id="formulaList" style="margin-top:10px;font-size:13px;color:var(--ink-soft);"></div>
+
+    <div class="section-label" style="margin-top:34px;">Step 2d &nbsp;&mdash;&nbsp; Split output into sheets</div>
+    <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
+      Instead of one flat sheet, split the cleaned data into a separate tab per value of a column &mdash;
+      e.g. one tab per district, department, or month.
+    </p>
+    <div class="adv-row">
+      <label><input type="checkbox" id="splitSheetsEnabled"> Split into separate sheets by:</label>
+      <select id="splitSheetsColumn"></select>
+    </div>
 
     <details class="advanced">
       <summary>Advanced &mdash; merge or split columns</summary>
@@ -426,7 +441,8 @@
       remove: false,
       serial: /^(sl\.?\s*no\.?|s\.?\s*no\.?|serial)/i.test(h),
       format: 'none',
-      decimals: 2
+      decimals: 2,
+      rename: h || `Column ${i+1}`
     }));
     // ensure only one serial column defaults true (first match)
     let foundSerial = false;
@@ -474,6 +490,7 @@
           </select>
         </td>
         <td class="center"><input type="number" min="0" max="6" data-idx="${i}" data-field="decimals" value="${c.decimals}" ${c.format==='round' ? '' : 'disabled'}></td>
+        <td><input type="text" data-idx="${i}" data-field="rename" value="${c.rename}" style="width:100%;min-width:140px;"></td>
       `;
       colConfigBody.appendChild(tr);
     });
@@ -501,6 +518,12 @@
       inp.addEventListener('change', e => {
         const idx = +e.target.dataset.idx;
         colConfig[idx].decimals = Math.max(0, Math.min(6, +e.target.value || 0));
+      });
+    });
+    colConfigBody.querySelectorAll('input[data-field=rename]').forEach(inp => {
+      inp.addEventListener('change', e => {
+        const idx = +e.target.dataset.idx;
+        colConfig[idx].rename = e.target.value;
       });
     });
   }
@@ -579,6 +602,7 @@
     document.getElementById('mergeColA').innerHTML = opts;
     document.getElementById('mergeColB').innerHTML = opts;
     document.getElementById('splitCol').innerHTML = opts;
+    document.getElementById('splitSheetsColumn').innerHTML = colConfig.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
   }
 
   document.getElementById('addMergeBtn').addEventListener('click', () => {
@@ -670,6 +694,153 @@
       return '';
     }
   }
+
+  // ---------------- Templates ----------------
+  const TEMPLATE_KEY = 'ledgerCleanerTemplates';
+
+  function loadTemplates(){
+    try { return JSON.parse(localStorage.getItem(TEMPLATE_KEY) || '{}'); }
+    catch(e){ return {}; }
+  }
+  function saveTemplates(t){
+    try { localStorage.setItem(TEMPLATE_KEY, JSON.stringify(t)); } catch(e){}
+  }
+  function refreshTemplateSelect(){
+    const templates = loadTemplates();
+    const sel = document.getElementById('templateSelect');
+    const current = sel.value;
+    const names = Object.keys(templates).sort();
+    sel.innerHTML = '<option value="">No template</option>' + names.map(n => `<option value="${n}">${n}</option>`).join('');
+    if (names.includes(current)) sel.value = current;
+  }
+
+  function templateFromCurrentState(){
+    return {
+      colConfig: colConfig.map(c => ({ name: c.name, remove: c.remove, serial: c.serial, format: c.format, decimals: c.decimals, rename: c.rename })),
+      rules: rules.map(r => r.cols.map(i => colConfig[i] ? colConfig[i].name : null).filter(Boolean)),
+      formulas: formulas.map(f => ({ name: f.name, expr: f.expr, decimals: f.decimals })),
+      merges: merges.map(m => ({
+        aName: colConfig[m.a] ? colConfig[m.a].name : null,
+        bName: colConfig[m.b] ? colConfig[m.b].name : null,
+        sep: m.sep, name: m.name
+      })).filter(m => m.aName && m.bName),
+      splits: splits.map(s => ({
+        colName: colConfig[s.col] ? colConfig[s.col].name : null,
+        delim: s.delim
+      })).filter(s => s.colName)
+    };
+  }
+
+  function applyTemplate(tpl){
+    if (!tpl) return;
+    let matched = 0;
+    (tpl.colConfig || []).forEach(tc => {
+      const idx = colConfig.findIndex(c => c.name === tc.name);
+      if (idx >= 0){
+        matched++;
+        colConfig[idx].remove = !!tc.remove;
+        colConfig[idx].format = tc.format || 'none';
+        colConfig[idx].decimals = tc.decimals != null ? tc.decimals : 2;
+        colConfig[idx].rename = tc.rename || tc.name;
+        if (tc.serial) colConfig.forEach((c,i) => c.serial = (i === idx));
+      }
+    });
+    renderColConfig();
+
+    rules = (tpl.rules || []).map(names => {
+      const idxs = names.map(n => colConfig.findIndex(c => c.name === n)).filter(i => i >= 0);
+      return idxs.length ? { cols: idxs } : null;
+    }).filter(Boolean);
+    renderRulesList();
+
+    // formula expressions reference {Column Name} tokens directly, so they carry over as-is
+    formulas = (tpl.formulas || []).map(f => ({ name: f.name, expr: f.expr, decimals: f.decimals }));
+    renderFormulaList();
+
+    merges = (tpl.merges || []).map(m => {
+      const a = colConfig.findIndex(c => c.name === m.aName);
+      const b = colConfig.findIndex(c => c.name === m.bName);
+      return (a >= 0 && b >= 0) ? { a, b, sep: m.sep, name: m.name } : null;
+    }).filter(Boolean);
+    renderMergeList();
+
+    splits = (tpl.splits || []).map(s => {
+      const col = colConfig.findIndex(c => c.name === s.colName);
+      return col >= 0 ? { col, delim: s.delim } : null;
+    }).filter(Boolean);
+    renderSplitList();
+
+    const total = (tpl.colConfig || []).length;
+    if (matched < total){
+      alert(`Template applied. Matched ${matched} of ${total} columns by name — the rest weren't found in this sheet and were skipped.`);
+    }
+  }
+
+  document.getElementById('saveTemplateBtn').addEventListener('click', () => {
+    const name = document.getElementById('templateNameInput').value.trim();
+    if (!name){ alert('Give the template a name.'); return; }
+    const templates = loadTemplates();
+    templates[name] = templateFromCurrentState();
+    saveTemplates(templates);
+    refreshTemplateSelect();
+    document.getElementById('templateSelect').value = name;
+    document.getElementById('templateNameInput').value = '';
+  });
+
+  document.getElementById('applyTemplateBtn').addEventListener('click', () => {
+    const name = document.getElementById('templateSelect').value;
+    if (!name) return;
+    applyTemplate(loadTemplates()[name]);
+  });
+
+  document.getElementById('deleteTemplateBtn').addEventListener('click', () => {
+    const name = document.getElementById('templateSelect').value;
+    if (!name) return;
+    if (!confirm(`Delete template "${name}"?`)) return;
+    const templates = loadTemplates();
+    delete templates[name];
+    saveTemplates(templates);
+    refreshTemplateSelect();
+  });
+
+  document.getElementById('exportTemplateBtn').addEventListener('click', () => {
+    const selected = document.getElementById('templateSelect').value;
+    const typedName = document.getElementById('templateNameInput').value.trim();
+    const name = selected || typedName || 'template';
+    const templates = loadTemplates();
+    const data = templates[selected] || templateFromCurrentState();
+    const blob = new Blob([JSON.stringify({ name, ...data }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${name.replace(/\s+/g,'_')}.ledger-template.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('importTemplateInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = JSON.parse(evt.target.result);
+        const name = data.name || file.name.replace(/\.json$/i,'');
+        const templates = loadTemplates();
+        templates[name] = { colConfig: data.colConfig, rules: data.rules, formulas: data.formulas, merges: data.merges, splits: data.splits };
+        saveTemplates(templates);
+        refreshTemplateSelect();
+        document.getElementById('templateSelect').value = name;
+        alert(`Imported template "${name}". Click Apply to use it.`);
+      } catch(err){
+        alert('Could not read that template file.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+
+  refreshTemplateSelect();
 
   document.getElementById('processBtn').addEventListener('click', processSheet);
 
@@ -777,6 +948,16 @@
       }
     }
 
+    // 9. rename headers — applied last, using each column's original name to find its
+    //    current position (columns that were merged/split away no longer match, and are skipped)
+    colConfig.forEach(c => {
+      if (removeNames.includes(c.name)) return;
+      const newName = (c.rename && c.rename.trim()) ? c.rename.trim() : c.name;
+      if (newName === c.name) return;
+      const idx = workingHeaders.indexOf(c.name);
+      if (idx >= 0) workingHeaders[idx] = newName;
+    });
+
     cleanedHeaders = workingHeaders;
     cleanedRows = workingRows;
 
@@ -808,56 +989,85 @@
     }
   }
 
-  document.getElementById('downloadBtn').addEventListener('click', () => {
-    // convert numeric-looking text back into real numbers so Excel treats them
-    // as numbers (sortable/summable), not text
-    function coerceIfNumeric(v){
-      if (typeof v === 'number' || v instanceof Date) return v;
-      if (typeof v !== 'string') return v;
-      const s = v.trim();
-      if (s === '') return v;
-      const cleaned = s.replace(/,/g, '');
-      if (/^-?\d+(\.\d+)?$/.test(cleaned)) return Number(cleaned);
-      return v;
-    }
-
-    const aoa = [cleanedHeaders, ...cleanedRows.map(r => r.map(coerceIfNumeric))];
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-    // give columns that were explicitly rounded (or computed formula columns) a
-    // clean fixed-decimal display format, rather than baking decimals into text
-    const decimalCols = [];
+  function applyDecimalFormats(ws, rowCount){
     colConfig.forEach(c => {
-      if (c.format === 'round'){
-        const idx = cleanedHeaders.indexOf(c.name);
-        if (idx >= 0) decimalCols.push({ idx, decimals: c.decimals });
-      }
-    });
-    formulas.forEach(f => {
-      const idx = cleanedHeaders.indexOf(f.name);
-      if (idx >= 0) decimalCols.push({ idx, decimals: f.decimals });
-    });
-    decimalCols.forEach(({ idx, decimals }) => {
-      const numFmt = decimals > 0 ? ('0.' + '0'.repeat(decimals)) : '0';
-      for (let rIdx = 0; rIdx < cleanedRows.length; rIdx++){
+      if (c.format !== 'round') return;
+      const label = (c.rename && c.rename.trim()) ? c.rename.trim() : c.name;
+      const idx = cleanedHeaders.indexOf(label);
+      if (idx < 0) return;
+      const numFmt = c.decimals > 0 ? ('0.' + '0'.repeat(c.decimals)) : '0';
+      for (let rIdx = 0; rIdx < rowCount; rIdx++){
         const addr = XLSX.utils.encode_cell({ r: rIdx + 1, c: idx });
         if (ws[addr] && typeof ws[addr].v === 'number') ws[addr].z = numFmt;
       }
     });
+    formulas.forEach(f => {
+      const idx = cleanedHeaders.indexOf(f.name);
+      if (idx < 0) return;
+      const numFmt = f.decimals > 0 ? ('0.' + '0'.repeat(f.decimals)) : '0';
+      for (let rIdx = 0; rIdx < rowCount; rIdx++){
+        const addr = XLSX.utils.encode_cell({ r: rIdx + 1, c: idx });
+        if (ws[addr] && typeof ws[addr].v === 'number') ws[addr].z = numFmt;
+      }
+    });
+  }
 
+  function coerceIfNumeric(v){
+    if (typeof v === 'number' || v instanceof Date) return v;
+    if (typeof v !== 'string') return v;
+    const s = v.trim();
+    if (s === '') return v;
+    const cleaned = s.replace(/,/g, '');
+    if (/^-?\d+(\.\d+)?$/.test(cleaned)) return Number(cleaned);
+    return v;
+  }
+
+  function sheetFromRows(rowsSubset){
+    const aoa = [cleanedHeaders, ...rowsSubset.map(r => r.map(coerceIfNumeric))];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    applyDecimalFormats(ws, rowsSubset.length);
+    return ws;
+  }
+
+  document.getElementById('downloadBtn').addEventListener('click', () => {
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Cleaned Data');
+    const splitEnabled = document.getElementById('splitSheetsEnabled').checked;
+    const splitColLabel = document.getElementById('splitSheetsColumn').value;
+    const splitColSourceName = (() => {
+      // the split dropdown lists ORIGINAL column names; translate to the (possibly renamed) label actually present in cleanedHeaders
+      const cfg = colConfig.find(c => c.name === splitColLabel);
+      const label = cfg && cfg.rename && cfg.rename.trim() ? cfg.rename.trim() : splitColLabel;
+      return label;
+    })();
+    const splitIdx = splitEnabled ? cleanedHeaders.indexOf(splitColSourceName) : -1;
+
+    if (splitEnabled && splitIdx >= 0){
+      const groups = {};
+      const order = [];
+      cleanedRows.forEach(r => {
+        const raw = r[splitIdx];
+        const key = (raw === undefined || raw === null || String(raw).trim() === '') ? '(blank)' : String(raw).trim();
+        if (!groups[key]){ groups[key] = []; order.push(key); }
+        groups[key].push(r);
+      });
+      const usedNames = new Set();
+      order.forEach(key => {
+        let sheetName = key.replace(/[\\/?*\[\]:]/g, ' ').trim().slice(0, 31) || 'Sheet';
+        let base = sheetName, n = 2;
+        while (usedNames.has(sheetName)){
+          sheetName = (base.slice(0, 28) + '_' + n);
+          n++;
+        }
+        usedNames.add(sheetName);
+        XLSX.utils.book_append_sheet(wb, sheetFromRows(groups[key]), sheetName);
+      });
+    } else {
+      XLSX.utils.book_append_sheet(wb, sheetFromRows(cleanedRows), 'Cleaned Data');
+    }
+
     XLSX.writeFile(wb, 'Cleaned_Sheet.xlsx');
     document.getElementById('stamp').classList.add('show');
   });
-
-  // Register service worker for installability + offline app-shell caching.
-  // Guarded to http(s) only — a local file:// copy skips this silently.
-  if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
-    });
-  }
 })();
 </script>
 
