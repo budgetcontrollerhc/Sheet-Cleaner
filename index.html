@@ -299,7 +299,34 @@
     </div>
     <div id="formulaList" style="margin-top:10px;font-size:13px;color:var(--ink-soft);"></div>
 
-    <div class="section-label" style="margin-top:34px;">Step 2d &nbsp;&mdash;&nbsp; Split output into sheets</div>
+    <div class="section-label" style="margin-top:34px;">Step 2d &nbsp;&mdash;&nbsp; Remove rows by condition</div>
+    <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
+      Build a set of conditions that must <em>all</em> be true (AND), then save it as one delete condition.
+      Add more sets to cover different cases &mdash; a row is removed if it matches <em>any</em> saved set (OR).
+      Example: (Amount Spent &lt; 1000) <strong>AND</strong> (Percentage Expenditure &ge; 50).
+    </p>
+    <div class="adv-row">
+      <select id="condColumn"></select>
+      <select id="condOperator">
+        <option value="lt">&lt; less than</option>
+        <option value="lte">&le; less than or equal to</option>
+        <option value="gt">&gt; greater than</option>
+        <option value="gte">&ge; greater than or equal to</option>
+        <option value="eq">= equal to</option>
+        <option value="neq">&ne; not equal to</option>
+        <option value="contains">contains</option>
+        <option value="ncontains">does not contain</option>
+      </select>
+      <input type="text" id="condValue" placeholder="value" style="width:140px;">
+      <button class="small-btn" id="addCondBtn">Add to this set</button>
+    </div>
+    <div id="condStagingList" style="margin-top:8px;font-size:13px;color:var(--ink-soft);"></div>
+    <div style="margin-top:10px;">
+      <button class="small-btn" id="saveCondGroupBtn">Save this set as a delete condition</button>
+    </div>
+    <div id="condGroupsList" style="margin-top:14px;font-size:13px;color:var(--ink-soft);"></div>
+
+    <div class="section-label" style="margin-top:34px;">Step 2e &nbsp;&mdash;&nbsp; Split output into sheets</div>
     <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
       Instead of one flat sheet, split the cleaned data into a separate tab per value of a column &mdash;
       e.g. one tab per district, department, or month.
@@ -347,7 +374,7 @@
     <div class="tally">
       <div class="cell"><div class="num" id="tallyBefore">0</div><div class="lbl">rows read</div></div>
       <div class="cell"><div class="num removed" id="tallyHeaders">0</div><div class="lbl">repeated headings removed</div></div>
-      <div class="cell"><div class="num removed" id="tallyBlank">0</div><div class="lbl">blank / zero rows removed</div></div>
+      <div class="cell"><div class="num removed" id="tallyBlank">0</div><div class="lbl">blank/zero &amp; condition rows removed</div></div>
       <div class="cell"><div class="num kept" id="tallyAfter">0</div><div class="lbl">rows remaining</div></div>
     </div>
 
@@ -373,6 +400,8 @@
   let merges = [];        // {a, b, sep, name}
   let splits = [];        // {col, delim}
   let rules = [];          // [{cols:[idx,...]}]
+  let conditionStaging = []; // [{colIdx, colName, op, value}] — the AND-set currently being built
+  let conditionGroups = [];  // [[{colIdx, colName, op, value}, ...], ...] — each inner array ANDed, groups OR'd
   let formulas = [];       // [{name, expr, decimals}]
   let cleanedHeaders = [];
   let cleanedRows = [];
@@ -464,6 +493,13 @@
     const autoCols = colConfig.map((c,i) => i).filter(i => guessNumericColumn(i));
     if (autoCols.length) rules.push({ cols: autoCols });
     renderRulesList();
+
+    // value conditions: reset for the new file
+    conditionStaging = [];
+    conditionGroups = [];
+    document.getElementById('condColumn').innerHTML = colConfig.map((c,i) => `<option value="${i}">${c.name}</option>`).join('');
+    renderConditionStaging();
+    renderConditionGroups();
 
     // formula builder: reset for the new file
     formulas = [];
@@ -558,6 +594,83 @@
     el.querySelectorAll('button').forEach(b => b.addEventListener('click', e => {
       rules.splice(+e.target.dataset.i, 1); renderRulesList();
     }));
+  }
+
+  const OPERATOR_LABELS = {
+    lt: '<', lte: '&le;', gt: '>', gte: '&ge;', eq: '=', neq: '&ne;',
+    contains: 'contains', ncontains: 'does not contain'
+  };
+
+  document.getElementById('addCondBtn').addEventListener('click', () => {
+    const colIdx = +document.getElementById('condColumn').value;
+    const op = document.getElementById('condOperator').value;
+    const value = document.getElementById('condValue').value.trim();
+    if (value === ''){ alert('Enter a value to compare against.'); return; }
+    conditionStaging.push({ colIdx, colName: colConfig[colIdx].name, op, value });
+    document.getElementById('condValue').value = '';
+    renderConditionStaging();
+  });
+
+  function renderConditionStaging(){
+    const el = document.getElementById('condStagingList');
+    if (!conditionStaging.length){
+      el.innerHTML = '<em>Current set is empty &mdash; add a condition above, then save the set.</em>';
+      return;
+    }
+    el.innerHTML = conditionStaging.map((c,i) =>
+      `&#8226; <strong>${c.colName}</strong> ${OPERATOR_LABELS[c.op]} <strong>${c.value}</strong> &nbsp;<button class="small-btn" data-i="${i}" style="padding:2px 8px;">remove</button>`
+    ).join('<br>');
+    el.querySelectorAll('button').forEach(b => b.addEventListener('click', e => {
+      conditionStaging.splice(+e.target.dataset.i, 1); renderConditionStaging();
+    }));
+  }
+
+  document.getElementById('saveCondGroupBtn').addEventListener('click', () => {
+    if (!conditionStaging.length){ alert('Add at least one condition to this set first.'); return; }
+    conditionGroups.push(conditionStaging.slice());
+    conditionStaging = [];
+    renderConditionStaging();
+    renderConditionGroups();
+  });
+
+  function renderConditionGroups(){
+    const el = document.getElementById('condGroupsList');
+    if (!conditionGroups.length){
+      el.innerHTML = '<em>No delete conditions saved yet.</em>';
+      return;
+    }
+    el.innerHTML = conditionGroups.map((group,i) => {
+      const parts = group.map(c => `${c.colName} ${OPERATOR_LABELS[c.op]} ${c.value}`).join(' <strong>AND</strong> ');
+      return `&#8226; Remove row if ${parts} &nbsp;<button class="small-btn" data-i="${i}" style="padding:2px 8px;">remove</button>`;
+    }).join('<br><span style="opacity:.6;">&mdash; OR &mdash;</span><br>');
+    el.querySelectorAll('button').forEach(b => b.addEventListener('click', e => {
+      conditionGroups.splice(+e.target.dataset.i, 1); renderConditionGroups();
+    }));
+  }
+
+  // Evaluate one condition against a raw cell value. Numeric comparisons only apply when
+  // both sides parse as numbers; otherwise lt/lte/gt/gte never match (they're meaningless for text).
+  function conditionMatches(rawValue, op, condValueStr){
+    const s = rawValue === undefined || rawValue === null ? '' : String(rawValue);
+    const numVal = parseFloat(s.replace(/,/g,'').trim());
+    const numCond = parseFloat(condValueStr.replace(/,/g,'').trim());
+    const bothNumeric = !isNaN(numVal) && !isNaN(numCond) && s.trim() !== '';
+    switch(op){
+      case 'lt':  return bothNumeric && numVal <  numCond;
+      case 'lte': return bothNumeric && numVal <= numCond;
+      case 'gt':  return bothNumeric && numVal >  numCond;
+      case 'gte': return bothNumeric && numVal >= numCond;
+      case 'eq':
+        return bothNumeric ? numVal === numCond : s.trim().toLowerCase() === condValueStr.trim().toLowerCase();
+      case 'neq':
+        return bothNumeric ? numVal !== numCond : s.trim().toLowerCase() !== condValueStr.trim().toLowerCase();
+      case 'contains':
+        return s.toLowerCase().includes(condValueStr.toLowerCase());
+      case 'ncontains':
+        return !s.toLowerCase().includes(condValueStr.toLowerCase());
+      default:
+        return false;
+    }
   }
 
   function renderFormulaColButtons(){
@@ -718,6 +831,7 @@
     return {
       colConfig: colConfig.map(c => ({ name: c.name, remove: c.remove, serial: c.serial, format: c.format, decimals: c.decimals, rename: c.rename })),
       rules: rules.map(r => r.cols.map(i => colConfig[i] ? colConfig[i].name : null).filter(Boolean)),
+      conditionGroups: conditionGroups.map(group => group.map(c => ({ colName: c.colName, op: c.op, value: c.value }))),
       formulas: formulas.map(f => ({ name: f.name, expr: f.expr, decimals: f.decimals })),
       merges: merges.map(m => ({
         aName: colConfig[m.a] ? colConfig[m.a].name : null,
@@ -752,6 +866,19 @@
       return idxs.length ? { cols: idxs } : null;
     }).filter(Boolean);
     renderRulesList();
+
+    // supports both the current grouped format and older templates saved as a flat list
+    // (each legacy condition becomes its own single-condition group)
+    const rawGroups = tpl.conditionGroups || (tpl.conditions ? tpl.conditions.map(c => [c]) : []);
+    conditionGroups = rawGroups.map(group =>
+      group.map(c => {
+        const idx = colConfig.findIndex(cc => cc.name === c.colName);
+        return idx >= 0 ? { colIdx: idx, colName: c.colName, op: c.op, value: c.value } : null;
+      }).filter(Boolean)
+    ).filter(group => group.length);
+    conditionStaging = [];
+    renderConditionStaging();
+    renderConditionGroups();
 
     // formula expressions reference {Column Name} tokens directly, so they carry over as-is
     formulas = (tpl.formulas || []).map(f => ({ name: f.name, expr: f.expr, decimals: f.decimals }));
@@ -868,6 +995,17 @@
       });
     }
 
+    // 2b. remove rows matching ANY saved condition-set (each set's conditions must ALL be true — AND;
+    //     a row is removed if it matches any one saved set — OR between sets)
+    let conditionCount = 0;
+    if (conditionGroups.length){
+      rows = rows.filter(r => {
+        const matchesAnyGroup = conditionGroups.some(group => group.every(c => conditionMatches(r[c.colIdx], c.op, c.value)));
+        if (matchesAnyGroup) conditionCount++;
+        return !matchesAnyGroup;
+      });
+    }
+
     // build working header/row list keyed by original column index
     let workingHeaders = colConfig.map(c => c.name);
     let workingRows = rows.map(r => workingHeaders.map((h,i) => r[i] !== undefined ? r[i] : ''));
@@ -963,7 +1101,7 @@
 
     document.getElementById('tallyBefore').textContent = dataRows.length;
     document.getElementById('tallyHeaders').textContent = repeatedHeaderCount;
-    document.getElementById('tallyBlank').textContent = blankCount;
+    document.getElementById('tallyBlank').textContent = blankCount + conditionCount;
     document.getElementById('tallyAfter').textContent = cleanedRows.length;
 
     renderPreview();
@@ -1022,10 +1160,25 @@
     return v;
   }
 
-  function sheetFromRows(rowsSubset){
-    const aoa = [cleanedHeaders, ...rowsSubset.map(r => r.map(coerceIfNumeric))];
+  function sheetFromRows(rowsSubset, renumberWithinSheet){
+    let rows = rowsSubset;
+    if (renumberWithinSheet){
+      const serialCfg = colConfig.find(c => c.serial);
+      if (serialCfg){
+        const label = (serialCfg.rename && serialCfg.rename.trim()) ? serialCfg.rename.trim() : serialCfg.name;
+        const idx = cleanedHeaders.indexOf(label);
+        if (idx >= 0){
+          rows = rowsSubset.map((r, i) => {
+            const copy = r.slice();
+            copy[idx] = i + 1;
+            return copy;
+          });
+        }
+      }
+    }
+    const aoa = [cleanedHeaders, ...rows.map(r => r.map(coerceIfNumeric))];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    applyDecimalFormats(ws, rowsSubset.length);
+    applyDecimalFormats(ws, rows.length);
     return ws;
   }
 
@@ -1059,10 +1212,10 @@
           n++;
         }
         usedNames.add(sheetName);
-        XLSX.utils.book_append_sheet(wb, sheetFromRows(groups[key]), sheetName);
+        XLSX.utils.book_append_sheet(wb, sheetFromRows(groups[key], true), sheetName);
       });
     } else {
-      XLSX.utils.book_append_sheet(wb, sheetFromRows(cleanedRows), 'Cleaned Data');
+      XLSX.utils.book_append_sheet(wb, sheetFromRows(cleanedRows, false), 'Cleaned Data');
     }
 
     XLSX.writeFile(wb, 'Cleaned_Sheet.xlsx');
