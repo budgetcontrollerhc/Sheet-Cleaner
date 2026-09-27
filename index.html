@@ -351,6 +351,15 @@
     </div>
     <div id="sortFieldsList" style="margin-top:10px;font-size:13px;color:var(--ink-soft);"></div>
 
+    <div class="section-label" style="margin-top:34px;">Step 2g &nbsp;&mdash;&nbsp; Reorder columns</div>
+    <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
+      Move columns up or down to set their final left-to-right order in the output.
+    </p>
+    <div id="columnOrderList" style="padding:14px;background:rgba(255,255,255,0.4);border:1px solid var(--rule);font-size:13px;color:var(--ink-soft);"></div>
+    <div style="margin-top:10px;">
+      <button class="small-btn" id="resetColumnOrderBtn">Reset to original order</button>
+    </div>
+
     <details class="advanced">
       <summary>Advanced &mdash; merge or split columns</summary>
       <div class="adv-body">
@@ -418,6 +427,7 @@
   let conditionStaging = []; // [{colIdx, colName, op, value}] — the AND-set currently being built
   let conditionGroups = [];  // [[{colIdx, colName, op, value}, ...], ...] — each inner array ANDed, groups OR'd
   let sortFields = [];       // [{colName, dir}] — priority order: first field wins ties broken by the next
+  let columnOrder = [];      // [colName, ...] — desired final left-to-right order of the original columns
   let formulas = [];       // [{name, expr, decimals}]
   let cleanedHeaders = [];
   let cleanedRows = [];
@@ -525,6 +535,10 @@
     // sort fields: reset for the new file
     sortFields = [];
     renderSortFieldsList();
+
+    // column order: defaults to the file's natural order
+    columnOrder = colConfig.map(c => c.name);
+    renderColumnOrderList();
   }
 
   function renderColConfig(){
@@ -623,6 +637,31 @@
       renderSortFieldsList();
     }));
   }
+
+  function renderColumnOrderList(){
+    const el = document.getElementById('columnOrderList');
+    if (!columnOrder.length){
+      el.innerHTML = '<em>No columns yet.</em>';
+      return;
+    }
+    el.innerHTML = columnOrder.map((name,i) => `
+      &#8226; <strong>${i+1}.</strong> ${name}
+      <button class="small-btn" data-act="up" data-i="${i}" style="padding:2px 8px;">&uarr;</button>
+      <button class="small-btn" data-act="down" data-i="${i}" style="padding:2px 8px;">&darr;</button>
+    `).join('<br>');
+    el.querySelectorAll('button').forEach(b => b.addEventListener('click', e => {
+      const i = +e.target.dataset.i;
+      const act = e.target.dataset.act;
+      if (act === 'up' && i > 0) [columnOrder[i-1], columnOrder[i]] = [columnOrder[i], columnOrder[i-1]];
+      else if (act === 'down' && i < columnOrder.length - 1) [columnOrder[i+1], columnOrder[i]] = [columnOrder[i], columnOrder[i+1]];
+      renderColumnOrderList();
+    }));
+  }
+
+  document.getElementById('resetColumnOrderBtn').addEventListener('click', () => {
+    columnOrder = colConfig.map(c => c.name);
+    renderColumnOrderList();
+  });
 
   document.getElementById('addRuleBtn').addEventListener('click', () => {
     const checked = Array.from(document.querySelectorAll('.rule-col-check:checked')).map(el => +el.value);
@@ -907,6 +946,7 @@
       rules: rules.map(r => r.cols.map(i => colConfig[i] ? colConfig[i].name : null).filter(Boolean)),
       conditionGroups: conditionGroups.map(group => group.map(c => ({ colName: c.colName, op: c.op, value: c.value }))),
       sortFields: sortFields.map(f => ({ colName: f.colName, dir: f.dir })),
+      columnOrder: columnOrder.slice(),
       formulas: formulas.map(f => ({ name: f.name, expr: f.expr, decimals: f.decimals })),
       merges: merges.map(m => ({
         aName: colConfig[m.a] ? colConfig[m.a].name : null,
@@ -957,6 +997,10 @@
 
     sortFields = (tpl.sortFields || []).filter(f => colConfig.some(c => c.name === f.colName));
     renderSortFieldsList();
+
+    columnOrder = (tpl.columnOrder || []).filter(n => colConfig.some(c => c.name === n));
+    colConfig.forEach(c => { if (!columnOrder.includes(c.name)) columnOrder.push(c.name); });
+    renderColumnOrderList();
 
     // formula expressions reference {Column Name} tokens directly, so they carry over as-is
     formulas = (tpl.formulas || []).map(f => ({ name: f.name, expr: f.expr, decimals: f.decimals }));
@@ -1165,7 +1209,23 @@
       if (idx >= 0) workingHeaders[idx] = newName;
     });
 
-    // 9. sort rows by the configured priority-ordered fields (first field wins ties broken by
+    // 9. reorder columns per the configured column order — uses each original column's current
+    //    (possibly renamed) label; a merged/split/computed column isn't part of this list, so it
+    //    simply stays wherever it currently sits, appended after the explicitly ordered columns
+    if (columnOrder.length){
+      const labelForOriginalName = (name) => {
+        const cfg = colConfig.find(c => c.name === name);
+        return (cfg && cfg.rename && cfg.rename.trim()) ? cfg.rename.trim() : name;
+      };
+      const orderedLabels = columnOrder.map(labelForOriginalName).filter(label => workingHeaders.includes(label));
+      const remainingLabels = workingHeaders.filter(h => !orderedLabels.includes(h));
+      const finalLabelOrder = [...orderedLabels, ...remainingLabels];
+      const newIdxOrder = finalLabelOrder.map(label => workingHeaders.indexOf(label));
+      workingHeaders = newIdxOrder.map(i => workingHeaders[i]);
+      workingRows = workingRows.map(r => newIdxOrder.map(i => r[i]));
+    }
+
+    // 10. sort rows by the configured priority-ordered fields (first field wins ties broken by
     //    the next, and so on). Numeric comparison when both sides parse as numbers, otherwise
     //    a natural-order text comparison.
     if (sortFields.length){
@@ -1193,7 +1253,7 @@
       });
     }
 
-    // 10. renumber serial column — done last so the numbers reflect the FINAL row order
+    // 11. renumber serial column — done last so the numbers reflect the FINAL row order
     //     (after sorting), not the order rows happened to be in before that
     const serialCfg = colConfig.find(c => c.serial);
     if (serialCfg && !removeNames.includes(serialCfg.name)){
