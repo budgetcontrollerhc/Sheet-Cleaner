@@ -460,7 +460,10 @@
       const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
       if (!aoa.length){ alert('Could not find any rows in the first sheet.'); return; }
       rawRows = aoa;
-      headers = aoa[0].map(h => String(h).trim());
+      // collapse line breaks / repeated whitespace inside headings so names are single-line
+      // (a heading with a line break can't survive a round-trip through a text input, which
+      // silently breaks {Column} tokens in formulas)
+      headers = aoa[0].map(h => normName(h));
       buildColumnConfig();
       showFileChip(file.name, aoa.length - 1);
       configSection.classList.remove('hidden');
@@ -786,6 +789,8 @@
     const decimals = Math.max(0, Math.min(6, +document.getElementById('formulaDecimals').value || 0));
     if (!expr){ alert('Click columns above to build a formula first.'); return; }
     if (!name){ alert('Give the new column a name.'); return; }
+    const problem = validateFormula(expr);
+    if (problem){ alert(problem); return; }
     formulas.push({ name, expr, decimals });
     document.getElementById('formulaExpr').value = '';
     document.getElementById('formulaName').value = '';
@@ -895,23 +900,34 @@
     }
   }
 
+  // Collapse any run of whitespace (including line breaks) to one space and trim.
+  function normName(s){
+    return String(s === undefined || s === null ? '' : s).replace(/\s+/g, ' ').trim();
+  }
+
+  // Turn typographic operators (− – — × ÷) that people copy/paste into their ASCII equivalents.
+  function normalizeOperators(expr){
+    return String(expr).replace(/[\u2212\u2013\u2014]/g, '-').replace(/\u00D7/g, '*').replace(/\u00F7/g, '/');
+  }
+
   // Evaluate a formula string containing {Column Name} tokens against one row.
-  // Longest header names are substituted first so partial name overlaps don't corrupt the expression.
+  // Token names are matched ignoring case and whitespace differences.
   function evalFormula(expr, headersArr, row){
-    let s = expr;
-    const sorted = headersArr.map((h,i) => ({h,i})).sort((a,b) => b.h.length - a.h.length);
-    sorted.forEach(({h,i}) => {
-      const token = `{${h}}`;
-      if (s.includes(token)){
-        const raw = row[i];
-        let num = 0;
-        if (raw !== undefined && raw !== null && raw !== ''){
-          const parsed = parseNumeric(raw);
-          if (!isNaN(parsed)) num = parsed;
-        }
-        s = s.split(token).join('(' + num + ')');
+    const lookup = {};
+    headersArr.forEach((h, i) => { lookup[normName(h).toLowerCase()] = i; });
+
+    const s = normalizeOperators(expr).replace(/\{([^}]*)\}/g, (whole, name) => {
+      const i = lookup[normName(name).toLowerCase()];
+      if (i === undefined) return whole;            // unknown column — left in place so validation below fails
+      const raw = row[i];
+      let num = 0;
+      if (raw !== undefined && raw !== null && raw !== ''){
+        const parsed = parseNumeric(raw);
+        if (!isNaN(parsed)) num = parsed;
       }
+      return '(' + num + ')';
     });
+
     if (!/^[0-9+\-*/().\s]+$/.test(s)) return '';
     try {
       const result = Function('"use strict"; return (' + s + ')')();
@@ -919,6 +935,25 @@
     } catch(e){
       return '';
     }
+  }
+
+  // Check a formula when it's added, so problems show up immediately instead of as silent blank cells.
+  // Returns an error message, or '' if the formula looks fine.
+  function validateFormula(expr){
+    const known = new Set(colConfig.map(c => normName(c.name).toLowerCase())
+      .concat(formulas.map(f => normName(f.name).toLowerCase())));
+    const unknown = [];
+    expr.replace(/\{([^}]*)\}/g, (whole, name) => {
+      if (!known.has(normName(name).toLowerCase())) unknown.push(name);
+      return whole;
+    });
+    if (unknown.length) return 'These columns were not found: ' + unknown.map(u => '"' + normName(u) + '"').join(', ') + '. Use the column buttons to insert names.';
+
+    const test = normalizeOperators(expr).replace(/\{[^}]*\}/g, '(1)');
+    if (!/^[0-9+\-*/().\s]+$/.test(test)) return 'A formula can only contain column names in { }, numbers, + - * / and parentheses.';
+    try { Function('"use strict"; return (' + test + ')')(); }
+    catch(e){ return 'That formula has a syntax error — check the operators and parentheses.'; }
+    return '';
   }
 
   // ---------------- Templates ----------------
@@ -962,6 +997,19 @@
 
   function applyTemplate(tpl){
     if (!tpl) return;
+
+    // Templates saved before column names were whitespace-normalised may contain names with
+    // line breaks; normalise every name in a copy so they match the current columns.
+    tpl = JSON.parse(JSON.stringify(tpl));
+    (tpl.colConfig || []).forEach(c => { c.name = normName(c.name); if (c.rename != null) c.rename = normName(c.rename); });
+    tpl.rules = (tpl.rules || []).map(names => names.map(normName));
+    (tpl.conditionGroups || []).forEach(g => g.forEach(c => { c.colName = normName(c.colName); }));
+    (tpl.conditions || []).forEach(c => { c.colName = normName(c.colName); });
+    (tpl.sortFields || []).forEach(f => { f.colName = normName(f.colName); });
+    tpl.columnOrder = (tpl.columnOrder || []).map(normName);
+    (tpl.merges || []).forEach(m => { m.aName = normName(m.aName); m.bName = normName(m.bName); });
+    (tpl.splits || []).forEach(s => { s.colName = normName(s.colName); });
+
     let matched = 0;
     (tpl.colConfig || []).forEach(tc => {
       const idx = colConfig.findIndex(c => c.name === tc.name);
@@ -1095,13 +1143,29 @@
 
   function processSheet(){
     const dataRows = rawRows.slice(1);
-    const headerJoined = headers.join('|').toLowerCase();
 
-    // 1. remove repeated header rows
+    // 1. remove repeated heading rows. A row counts as a repeated heading when it matches the
+    //    heading row tolerantly — ignoring case, spacing, punctuation and line breaks — in most
+    //    of the heading's non-empty cells, or when its first heading cell matches (a data row's
+    //    "Sl. No." cell holds a number, never the words "Sl. No.").
+    const squash = v => String(v === undefined || v === null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const headerKeys = headers.map(squash);
+    const filledIdx = headerKeys.map((k, i) => k ? i : -1).filter(i => i >= 0);
+    const firstIdx = filledIdx.length ? filledIdx[0] : -1;
+    const firstIsWords = firstIdx >= 0 && isNaN(parseNumeric(headers[firstIdx]));
+    const needed = filledIdx.length <= 2 ? filledIdx.length : Math.ceil(filledIdx.length * 0.6);
+
+    function isRepeatedHeading(r){
+      if (!filledIdx.length) return false;
+      if (firstIsWords && squash(r[firstIdx]) === headerKeys[firstIdx]) return true;
+      let matches = 0;
+      for (const i of filledIdx){ if (squash(r[i]) === headerKeys[i]) matches++; }
+      return matches >= needed;
+    }
+
     let repeatedHeaderCount = 0;
     let rows = dataRows.filter(r => {
-      const joined = headers.map((h, i) => String(r[i] !== undefined ? r[i] : '').trim()).join('|').toLowerCase();
-      const isRepeat = joined === headerJoined;
+      const isRepeat = isRepeatedHeading(r);
       if (isRepeat) repeatedHeaderCount++;
       return !isRepeat;
     });
