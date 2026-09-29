@@ -124,6 +124,24 @@
     border:none;background:none;color:var(--red);cursor:pointer;font-size:13px;font-family:inherit;
   }
 
+  /* Sheet tabs (multi-sheet files) */
+  #sheetTabsBar{
+    padding:14px;background:rgba(255,255,255,0.4);border:1px solid var(--ink);margin-bottom:26px;
+  }
+  #sheetTabsBar .hint{font-size:13px;color:var(--ink-soft);margin:0 0 10px;line-height:1.5;}
+  #sheetTabs{display:flex;flex-wrap:wrap;gap:8px;}
+  .sheet-tab{
+    display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 8px;
+    border:1px solid var(--rule);background:#fff;border-radius:2px;
+  }
+  .sheet-tab.active{background:var(--ink);border-color:var(--ink);}
+  .sheet-tab.active .sheet-tab-btn{color:var(--paper);}
+  .sheet-tab input[type=checkbox]{accent-color:var(--brass);width:15px;height:15px;cursor:pointer;margin:0;}
+  .sheet-tab-btn{
+    border:none;background:none;cursor:pointer;color:var(--ink);
+    font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:500;padding:2px 0;
+  }
+
   /* Column config */
   .col-table{width:100%;border-collapse:collapse;font-size:14px;background:rgba(255,255,255,0.4);}
   .col-table th{
@@ -236,13 +254,24 @@
     <div id="dropzone">
       <div class="icon">&#9998;</div>
       <div class="primary">Drop a file here, or click to browse</div>
-      <div class="secondary">The first row of your first sheet is treated as the heading row</div>
+      <div class="secondary">The first row of each sheet is treated as its heading row &mdash; files with several sheets are cleaned sheet by sheet</div>
       <input type="file" id="fileInput" accept=".xlsx,.xls,.ods,.csv">
     </div>
     <div id="fileChipHolder"></div>
   </section>
 
   <section id="configSection" class="hidden">
+    <div id="sheetTabsBar" class="hidden">
+      <p class="hint">
+        This file has several sheets. Click a sheet's name to set up its cleaning below &mdash; each sheet keeps its own settings.
+        Tick the box beside a sheet to include it in the download; you get one cleaned tab per sheet.
+      </p>
+      <div id="sheetTabs"></div>
+      <div style="margin-top:12px;">
+        <button class="small-btn" id="copySettingsBtn">Apply this sheet's settings to all other sheets</button>
+      </div>
+    </div>
+
     <div class="section-label">Step 2 &nbsp;&mdash;&nbsp; Mark the columns</div>
 
     <div id="templateBar" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 14px;background:rgba(255,255,255,0.4);border:1px solid var(--rule);margin-bottom:16px;">
@@ -326,7 +355,34 @@
     </div>
     <div id="condGroupsList" style="margin-top:14px;font-size:13px;color:var(--ink-soft);"></div>
 
-    <div class="section-label" style="margin-top:34px;">Step 2e &nbsp;&mdash;&nbsp; Split output into sheets</div>
+    <div class="section-label" style="margin-top:34px;">Step 2e &nbsp;&mdash;&nbsp; Consolidate rows by identifier</div>
+    <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
+      Combine all rows that share the same identifier &mdash; a name, ID, account number and so on &mdash; into a single row,
+      adding up (or otherwise combining) their values. This runs after unwanted rows have been removed and before computed columns,
+      so formulas work on the combined figures.
+    </p>
+    <div class="adv-row">
+      <label style="color:var(--ink);"><input type="checkbox" id="consolidateEnabled"> Consolidate rows that share the same identifier</label>
+    </div>
+    <div id="consolidateBody" class="hidden" style="margin-top:12px;">
+      <div style="font-size:12px;color:var(--ink);font-weight:600;margin-bottom:8px;">Identifier column(s) &mdash; rows are combined when all of these match</div>
+      <div id="consolidateKeys" style="display:flex;flex-wrap:wrap;gap:8px 18px;padding:14px;background:rgba(255,255,255,0.4);border:1px solid var(--rule);"></div>
+      <div class="adv-row" style="margin-top:12px;">
+        <label style="color:var(--ink);"><input type="checkbox" id="consolidateIgnoreCase" checked> Ignore capitalisation and extra spaces when matching identifiers</label>
+      </div>
+      <div style="font-size:12px;color:var(--ink);font-weight:600;margin:16px 0 8px;">How to combine each of the other columns</div>
+      <table class="col-table">
+        <thead><tr><th>Column</th><th>Combine by</th></tr></thead>
+        <tbody id="consolidateAggBody"></tbody>
+      </table>
+      <div class="adv-row" style="margin-top:12px;">
+        <label style="color:var(--ink);"><input type="checkbox" id="consolidateAddCount"> Add a column showing how many rows were combined, named</label>
+        <input type="text" id="consolidateCountName" value="Records combined" style="width:180px;">
+      </div>
+      <p style="font-size:12px;color:var(--ink-soft);margin:10px 0 0;">Rows whose identifier is blank are left as they are &mdash; they are never combined with each other.</p>
+    </div>
+
+    <div class="section-label" style="margin-top:34px;">Step 2f &nbsp;&mdash;&nbsp; Split output into sheets</div>
     <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
       Instead of one flat sheet, split the cleaned data into a separate tab per value of a column &mdash;
       e.g. one tab per district, department, or month.
@@ -336,7 +392,7 @@
       <select id="splitSheetsColumn"></select>
     </div>
 
-    <div class="section-label" style="margin-top:34px;">Step 2f &nbsp;&mdash;&nbsp; Sort rows</div>
+    <div class="section-label" style="margin-top:34px;">Step 2g &nbsp;&mdash;&nbsp; Sort rows</div>
     <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
       Sort by one or more columns, in priority order &mdash; e.g. sort by District first, then by Amount Spent
       (highest first) to break ties within each district. If splitting into sheets, each tab keeps this same order.
@@ -351,7 +407,7 @@
     </div>
     <div id="sortFieldsList" style="margin-top:10px;font-size:13px;color:var(--ink-soft);"></div>
 
-    <div class="section-label" style="margin-top:34px;">Step 2g &nbsp;&mdash;&nbsp; Reorder columns</div>
+    <div class="section-label" style="margin-top:34px;">Step 2h &nbsp;&mdash;&nbsp; Reorder columns</div>
     <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
       Move columns up or down to set their final left-to-right order in the output.
     </p>
@@ -393,7 +449,7 @@
   </section>
 
   <section id="resultSection" class="hidden">
-    <div class="section-label">Step 3 &nbsp;&mdash;&nbsp; The clean copy</div>
+    <div class="section-label">Step 3 &nbsp;&mdash;&nbsp; The clean copy<span id="resultSheetName"></span></div>
 
     <div class="tally">
       <div class="cell"><div class="num" id="tallyBefore">0</div><div class="lbl">rows read</div></div>
@@ -401,6 +457,7 @@
       <div class="cell"><div class="num removed" id="tallyBlank">0</div><div class="lbl">blank/zero &amp; condition rows removed</div></div>
       <div class="cell"><div class="num kept" id="tallyAfter">0</div><div class="lbl">rows remaining</div></div>
     </div>
+    <div id="consolidateNote" style="margin-top:10px;font-size:13px;color:var(--ink-soft);"></div>
 
     <div class="preview-wrap">
       <table class="preview" id="previewTable"></table>
@@ -410,6 +467,7 @@
       <button class="primary-btn" id="downloadBtn">Download cleaned .xlsx</button>
       <div class="stamp" id="stamp">Register<br>Verified</div>
     </div>
+    <div id="multiSummary" style="margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.7;color:var(--ink-soft);"></div>
   </section>
 
 </div>
@@ -429,8 +487,53 @@
   let sortFields = [];       // [{colName, dir}] — priority order: first field wins ties broken by the next
   let columnOrder = [];      // [colName, ...] — desired final left-to-right order of the original columns
   let formulas = [];       // [{name, expr, decimals}]
+  let splitEnabled = false;  // split the output into one tab per value of splitColName
+  let splitColName = '';     // ORIGINAL column name to split on
+  // consolidation: combine rows that share the same identifier into one row
+  let consolidateEnabled = false;
+  let consolidateKeys = [];            // ORIGINAL column names that identify a record
+  let consolidateAggs = {};            // {columnName: 'sum'|'average'|'count'|'min'|'max'|'first'|'last'|'join'}
+  let consolidateIgnoreCase = true;    // match identifiers ignoring capitalisation and extra spaces
+  let consolidateAddCount = false;     // add a column showing how many rows were combined
+  let consolidateCountName = 'Records combined';
   let cleanedHeaders = [];
   let cleanedRows = [];
+
+  // ---- Multi-sheet support ----
+  // Every sheet in the uploaded file gets its own complete set of settings. The variables above always
+  // hold the ACTIVE sheet's settings; switching sheets snapshots them into sheetStates and loads the other's.
+  let sheetStates = [];      // [{name, include, rawRows, headers, colConfig, merges, splits, rules, ...}]
+  let activeSheet = -1;
+
+  function newSheetState(name){
+    return { name, include: true, rawRows: [], headers: [], colConfig: [], merges: [], splits: [], rules: [],
+             conditionStaging: [], conditionGroups: [], sortFields: [], columnOrder: [], formulas: [],
+             splitEnabled: false, splitColName: '',
+             consolidateEnabled: false, consolidateKeys: [], consolidateAggs: {}, consolidateIgnoreCase: true,
+             consolidateAddCount: false, consolidateCountName: 'Records combined' };
+  }
+  function snapshotInto(st){
+    st.rawRows = rawRows; st.headers = headers; st.colConfig = colConfig; st.merges = merges; st.splits = splits;
+    st.rules = rules; st.conditionStaging = conditionStaging; st.conditionGroups = conditionGroups;
+    st.sortFields = sortFields; st.columnOrder = columnOrder; st.formulas = formulas;
+    st.splitEnabled = splitEnabled; st.splitColName = splitColName;
+    st.consolidateEnabled = consolidateEnabled; st.consolidateKeys = consolidateKeys; st.consolidateAggs = consolidateAggs;
+    st.consolidateIgnoreCase = consolidateIgnoreCase; st.consolidateAddCount = consolidateAddCount;
+    st.consolidateCountName = consolidateCountName;
+  }
+  function activateState(st){          // silent: only swaps the variables, doesn't touch the page
+    rawRows = st.rawRows; headers = st.headers; colConfig = st.colConfig; merges = st.merges; splits = st.splits;
+    rules = st.rules; conditionStaging = st.conditionStaging; conditionGroups = st.conditionGroups;
+    sortFields = st.sortFields; columnOrder = st.columnOrder; formulas = st.formulas;
+    splitEnabled = st.splitEnabled; splitColName = st.splitColName;
+    consolidateEnabled = st.consolidateEnabled; consolidateKeys = st.consolidateKeys; consolidateAggs = st.consolidateAggs;
+    consolidateIgnoreCase = st.consolidateIgnoreCase; consolidateAddCount = st.consolidateAddCount;
+    consolidateCountName = st.consolidateCountName;
+    cleanedHeaders = []; cleanedRows = [];
+  }
+  function saveActiveSheet(){
+    if (activeSheet >= 0 && sheetStates[activeSheet]) snapshotInto(sheetStates[activeSheet]);
+  }
 
   const dropzone = document.getElementById('dropzone');
   const fileInput = document.getElementById('fileInput');
@@ -455,32 +558,133 @@
     reader.onload = function(evt){
       const data = new Uint8Array(evt.target.result);
       const wb = XLSX.read(data, { type: 'array', cellDates: false });
-      const sheetName = wb.SheetNames[0];
-      const ws = wb.Sheets[sheetName];
-      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
-      if (!aoa.length){ alert('Could not find any rows in the first sheet.'); return; }
-      rawRows = aoa;
-      // collapse line breaks / repeated whitespace inside headings so names are single-line
-      // (a heading with a line break can't survive a round-trip through a text input, which
-      // silently breaks {Column} tokens in formulas)
-      headers = aoa[0].map(h => normName(h));
-      buildColumnConfig();
-      showFileChip(file.name, aoa.length - 1);
+
+      const states = [];
+      let skipped = 0;
+      wb.SheetNames.forEach(sheetName => {
+        const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '', raw: false });
+        if (!aoa.length){ skipped++; return; }          // empty sheet — nothing to clean
+        rawRows = aoa;
+        // collapse line breaks / repeated whitespace inside headings so names are single-line
+        // (a heading with a line break can't survive a round-trip through a text input, which
+        // silently breaks {Column} tokens in formulas)
+        headers = aoa[0].map(h => normName(h));
+        buildColumnConfig();                              // fills the settings variables with defaults
+        const st = newSheetState(sheetName);
+        snapshotInto(st);
+        states.push(st);
+      });
+      if (!states.length){ alert('Could not find any rows in this file.'); return; }
+
+      sheetStates = states;
+      activeSheet = 0;
+      activateState(sheetStates[0]);
+      renderActiveSheetUI();
+      showFileChip(file.name, states.length, states[0].rawRows.length - 1, skipped);
       configSection.classList.remove('hidden');
       resultSection.classList.add('hidden');
+      document.getElementById('multiSummary').innerHTML = '';
       configSection.scrollIntoView({behavior:'smooth', block:'start'});
     };
     reader.readAsArrayBuffer(file);
   }
 
-  function showFileChip(name, rowCount){
+  function escapeHtml(s){
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function showFileChip(name, sheetCount, rowCount, skipped){
     fileChipHolder.innerHTML = '';
     const chip = document.createElement('div');
     chip.className = 'file-chip';
-    chip.innerHTML = `<span>&#128196; ${name} &nbsp;&middot;&nbsp; ${rowCount} rows</span> <button type="button">change</button>`;
+    const detail = sheetCount > 1
+      ? `${sheetCount} sheets` + (skipped ? ` (${skipped} empty skipped)` : '')
+      : `${rowCount} rows`;
+    chip.innerHTML = `<span>&#128196; ${escapeHtml(name)} &nbsp;&middot;&nbsp; ${detail}</span> <button type="button">change</button>`;
     chip.querySelector('button').addEventListener('click', () => fileInput.click());
     fileChipHolder.appendChild(chip);
   }
+
+  // ---- sheet tabs ----
+  function renderSheetTabs(){
+    const bar = document.getElementById('sheetTabsBar');
+    if (sheetStates.length <= 1){ bar.classList.add('hidden'); return; }
+    bar.classList.remove('hidden');
+    const holder = document.getElementById('sheetTabs');
+    holder.innerHTML = sheetStates.map((st, i) => `
+      <span class="sheet-tab${i === activeSheet ? ' active' : ''}">
+        <input type="checkbox" class="sheet-include" data-i="${i}" ${st.include ? 'checked' : ''} title="Include this sheet in the download">
+        <button type="button" class="sheet-tab-btn" data-i="${i}">${escapeHtml(st.name)}</button>
+      </span>`).join('');
+    holder.querySelectorAll('.sheet-tab-btn').forEach(b => b.addEventListener('click', e => switchSheet(+e.target.dataset.i)));
+    holder.querySelectorAll('.sheet-include').forEach(cb => cb.addEventListener('change', e => {
+      sheetStates[+e.target.dataset.i].include = e.target.checked;
+      updateDownloadLabel();
+    }));
+  }
+
+  function updateDownloadLabel(){
+    const btn = document.getElementById('downloadBtn');
+    if (sheetStates.length <= 1){ btn.textContent = 'Download cleaned .xlsx'; return; }
+    const n = sheetStates.filter(s => s.include).length;
+    btn.textContent = `Download cleaned .xlsx (${n} sheet${n === 1 ? '' : 's'})`;
+  }
+
+  // Re-draw every settings panel from the (already activated) active sheet's variables.
+  function renderActiveSheetUI(){
+    renderColConfig();
+    populateMergeSplitSelects();
+    renderMergeList();
+    renderSplitList();
+    renderRuleBuilder();
+    renderRulesList();
+    document.getElementById('condColumn').innerHTML = colConfig.map((c,i) => `<option value="${i}">${c.name}</option>`).join('');
+    renderConditionStaging();
+    renderConditionGroups();
+    renderFormulaColButtons();
+    renderFormulaList();
+    renderSortFieldsList();
+    renderColumnOrderList();
+    renderSplitSheetsControls();
+    renderConsolidateUI();
+    renderSheetTabs();
+    updateDownloadLabel();
+  }
+
+  function renderSplitSheetsControls(){
+    if (!colConfig.some(c => c.name === splitColName)) splitColName = colConfig.length ? colConfig[0].name : '';
+    document.getElementById('splitSheetsEnabled').checked = splitEnabled;
+    document.getElementById('splitSheetsColumn').value = splitColName;
+  }
+  document.getElementById('splitSheetsEnabled').addEventListener('change', e => { splitEnabled = e.target.checked; });
+  document.getElementById('splitSheetsColumn').addEventListener('change', e => { splitColName = e.target.value; });
+
+  function switchSheet(i){
+    if (i === activeSheet || !sheetStates[i]) return;
+    saveActiveSheet();
+    activeSheet = i;
+    activateState(sheetStates[i]);
+    renderActiveSheetUI();
+    // if a preview is showing, refresh it for the newly selected sheet (without scrolling away)
+    if (!resultSection.classList.contains('hidden')) processSheet({ scroll: false });
+  }
+
+  document.getElementById('copySettingsBtn').addEventListener('click', () => {
+    if (sheetStates.length < 2) return;
+    if (!confirm("Apply this sheet's settings to all the other sheets?\n\nTheir current settings will be replaced. Columns are matched by name; anything a sheet doesn't have is skipped.")) return;
+    saveActiveSheet();
+    const tpl = templateFromCurrentState();
+    const keep = activeSheet;
+    sheetStates.forEach((st, i) => {
+      if (i === keep) return;
+      activateState(st);
+      applyTemplate(tpl, true);       // silent
+      snapshotInto(st);
+    });
+    activateState(sheetStates[keep]);
+    renderActiveSheetUI();
+    alert(`Settings applied to ${sheetStates.length - 1} other sheet${sheetStates.length - 1 === 1 ? '' : 's'}.`);
+  });
 
   function guessNumericColumn(colIdx){
     let numeric = 0, total = 0;
@@ -491,6 +695,17 @@
       if (!isNaN(parseNumeric(v))) numeric++;
     }
     return total > 0 && numeric / total > 0.6;
+  }
+
+  // A column that never actually contains a blank/zero value can't usefully take part in a
+  // "must be blank/zero" delete rule anyway — an ID or code column (Sl. No., a unit code) is always
+  // filled, so including it only makes the auto-generated rule silently unsatisfiable for every row.
+  function columnHasBlankOrZero(colIdx){
+    for (let r = 1; r < Math.min(rawRows.length, 300); r++){
+      const v = rawRows[r] ? rawRows[r][colIdx] : undefined;
+      if (isBlankOrZero(v)) return true;
+    }
+    return false;
   }
 
   function buildColumnConfig(){
@@ -519,7 +734,7 @@
     // rule builder: default one condition using auto-detected numeric columns
     rules = [];
     renderRuleBuilder();
-    const autoCols = colConfig.map((c,i) => i).filter(i => guessNumericColumn(i));
+    const autoCols = colConfig.map((c,i) => i).filter(i => guessNumericColumn(i) && columnHasBlankOrZero(i));
     if (autoCols.length) rules.push({ cols: autoCols });
     renderRulesList();
 
@@ -542,6 +757,19 @@
     // column order: defaults to the file's natural order
     columnOrder = colConfig.map(c => c.name);
     renderColumnOrderList();
+
+    // split-into-tabs: off by default
+    splitEnabled = false;
+    splitColName = colConfig.length ? colConfig[0].name : '';
+
+    // consolidation: off by default, with a sensible "how to combine" guess for every column
+    consolidateEnabled = false;
+    consolidateKeys = [];
+    consolidateIgnoreCase = true;
+    consolidateAddCount = false;
+    consolidateCountName = 'Records combined';
+    consolidateAggs = {};
+    colConfig.forEach((c, i) => { consolidateAggs[c.name] = defaultAggregation(c, i); });
   }
 
   function renderColConfig(){
@@ -768,7 +996,9 @@
 
   function renderFormulaColButtons(){
     const holder = document.getElementById('formulaColButtons');
-    holder.innerHTML = colConfig.map(c => `<button type="button" class="small-btn formula-col-btn" data-name="${c.name.replace(/"/g,'&quot;')}">${c.name}</button>`).join('');
+    const extraNames = (consolidateEnabled && consolidateAddCount) ? [countColumnName(colConfig.map(c => c.name))] : [];
+    holder.innerHTML = colConfig.map(c => c.name).concat(extraNames)
+      .map(n => `<button type="button" class="small-btn formula-col-btn" data-name="${n.replace(/"/g,'&quot;')}">${n}</button>`).join('');
     holder.querySelectorAll('.formula-col-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const input = document.getElementById('formulaExpr');
@@ -940,7 +1170,9 @@
   // Check a formula when it's added, so problems show up immediately instead of as silent blank cells.
   // Returns an error message, or '' if the formula looks fine.
   function validateFormula(expr){
+    const countCol = (consolidateEnabled && consolidateAddCount) ? [countColumnName(colConfig.map(c => c.name))] : [];
     const known = new Set(colConfig.map(c => normName(c.name).toLowerCase())
+      .concat(countCol.map(n => normName(n).toLowerCase()))
       .concat(formulas.map(f => normName(f.name).toLowerCase())));
     const unknown = [];
     expr.replace(/\{([^}]*)\}/g, (whole, name) => {
@@ -991,11 +1223,14 @@
       splits: splits.map(s => ({
         colName: colConfig[s.col] ? colConfig[s.col].name : null,
         delim: s.delim
-      })).filter(s => s.colName)
+      })).filter(s => s.colName),
+      splitSheets: { enabled: splitEnabled, colName: splitColName },
+      consolidate: { enabled: consolidateEnabled, keys: consolidateKeys.slice(), aggs: Object.assign({}, consolidateAggs),
+                     ignoreCase: consolidateIgnoreCase, addCount: consolidateAddCount, countName: consolidateCountName }
     };
   }
 
-  function applyTemplate(tpl){
+  function applyTemplate(tpl, silent){
     if (!tpl) return;
 
     // Templates saved before column names were whitespace-normalised may contain names with
@@ -1009,6 +1244,12 @@
     tpl.columnOrder = (tpl.columnOrder || []).map(normName);
     (tpl.merges || []).forEach(m => { m.aName = normName(m.aName); m.bName = normName(m.bName); });
     (tpl.splits || []).forEach(s => { s.colName = normName(s.colName); });
+    if (tpl.consolidate){
+      tpl.consolidate.keys = (tpl.consolidate.keys || []).map(normName);
+      const fixedAggs = {};
+      Object.keys(tpl.consolidate.aggs || {}).forEach(k => { fixedAggs[normName(k)] = tpl.consolidate.aggs[k]; });
+      tpl.consolidate.aggs = fixedAggs;
+    }
 
     let matched = 0;
     (tpl.colConfig || []).forEach(tc => {
@@ -1067,8 +1308,35 @@
     }).filter(Boolean);
     renderSplitList();
 
+    // split-into-tabs (older templates don't have this — leave the current setting alone)
+    if (tpl.splitSheets){
+      const wanted = normName(tpl.splitSheets.colName);
+      if (colConfig.some(c => c.name === wanted)){
+        splitEnabled = !!tpl.splitSheets.enabled;
+        splitColName = wanted;
+      } else {
+        splitEnabled = false;
+      }
+      renderSplitSheetsControls();
+    }
+
+    // consolidation (older templates don't have this — leave the current setting alone)
+    if (tpl.consolidate){
+      const cn = tpl.consolidate;
+      consolidateEnabled = !!cn.enabled;
+      consolidateKeys = (cn.keys || []).filter(n => colConfig.some(c => c.name === n));
+      colConfig.forEach(c => {
+        if (cn.aggs && AGG_OPTIONS.some(o => o[0] === cn.aggs[c.name])) consolidateAggs[c.name] = cn.aggs[c.name];
+      });
+      consolidateIgnoreCase = cn.ignoreCase !== false;
+      consolidateAddCount = !!cn.addCount;
+      consolidateCountName = cn.countName || 'Records combined';
+      renderConsolidateUI();
+      renderFormulaColButtons();
+    }
+
     const total = (tpl.colConfig || []).length;
-    if (matched < total){
+    if (matched < total && !silent){
       alert(`Template applied. Matched ${matched} of ${total} columns by name — the rest weren't found in this sheet and were skipped.`);
     }
   }
@@ -1139,9 +1407,140 @@
 
   refreshTemplateSelect();
 
-  document.getElementById('processBtn').addEventListener('click', processSheet);
+  document.getElementById('processBtn').addEventListener('click', () => processSheet());
 
-  function processSheet(){
+  // ---------------- Consolidation ----------------
+  const AGG_OPTIONS = [
+    ['sum', 'Add up (sum)'], ['average', 'Average'], ['count', 'Count (non-blank)'],
+    ['min', 'Smallest'], ['max', 'Largest'],
+    ['first', 'First value'], ['last', 'Last value'], ['join', 'List the different values']
+  ];
+
+  // Sensible starting choice for how to combine a column: numbers are added up (percentages/rates are
+  // averaged instead), everything else keeps its first value. Always adjustable per column.
+  function defaultAggregation(cfg, idx){
+    if (cfg.serial) return 'first';
+    if (guessNumericColumn(idx)) return /percent|%|\brate\b|ratio/i.test(cfg.name) ? 'average' : 'sum';
+    return 'first';
+  }
+
+  function roundTo8(x){ return Number(x.toFixed(8)); }
+
+  // Combine one column's values from all the rows of a group.
+  function aggregate(values, how){
+    const filled = values.filter(v => v !== undefined && v !== null && String(v).trim() !== '');
+    if (how === 'first') return filled.length ? filled[0] : '';
+    if (how === 'last')  return filled.length ? filled[filled.length - 1] : '';
+    if (how === 'count') return filled.length;
+    if (how === 'join'){
+      const seen = [];
+      filled.forEach(v => { const t = String(v).trim(); if (!seen.includes(t)) seen.push(t); });
+      return seen.join('; ');
+    }
+    // numeric ways (sum / average / min / max) — blanks and non-numeric cells are skipped
+    const nums = filled.map(parseNumeric).filter(n => !isNaN(n));
+    if (!nums.length) return '';
+    let total = 0, lo = nums[0], hi = nums[0];
+    nums.forEach(n => { total += n; if (n < lo) lo = n; if (n > hi) hi = n; });
+    if (how === 'sum') return roundTo8(total);
+    if (how === 'average') return roundTo8(total / nums.length);
+    if (how === 'min') return lo;
+    if (how === 'max') return hi;
+    return filled[0];
+  }
+
+  // Name for the optional "how many rows were combined" column (kept unique among existing columns).
+  function countColumnName(existing){
+    const base = normName(consolidateCountName) || 'Records combined';
+    let name = base, n = 2;
+    while (existing.includes(name)) name = base + ' (' + (n++) + ')';
+    return name;
+  }
+
+  // Combine rows that share the same identifier. Returns null when consolidation is off or has no usable key.
+  function consolidateRows(hdrs, rows){
+    if (!consolidateEnabled) return null;
+    const keyIdx = consolidateKeys.map(n => hdrs.indexOf(n)).filter(i => i >= 0);
+    if (!keyIdx.length) return null;
+
+    const norm = v => {
+      const t = v === undefined || v === null ? '' : String(v);
+      return consolidateIgnoreCase ? normName(t).toLowerCase() : t;
+    };
+    const groups = new Map();                 // Map keeps groups in order of first appearance
+    let blankKeyRows = 0;
+    rows.forEach((r, ri) => {
+      const parts = keyIdx.map(i => norm(r[i]));
+      let key;
+      if (parts.every(x => x.trim() === '')){ key = '\u0002' + ri; blankKeyRows++; }   // no identifier: never combined
+      else key = parts.join('\u0001');
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(r);
+    });
+
+    const outRows = [];
+    groups.forEach(list => {
+      const out = hdrs.map((h, ci) => keyIdx.includes(ci)
+        ? list[0][ci]
+        : aggregate(list.map(r => r[ci]), consolidateAggs[h] || 'first'));
+      if (consolidateAddCount) out.push(list.length);
+      outRows.push(out);
+    });
+    const outHeaders = hdrs.slice();
+    if (consolidateAddCount) outHeaders.push(countColumnName(hdrs));
+    return { headers: outHeaders, rows: outRows, from: rows.length, to: outRows.length,
+             blankKeyRows, keys: keyIdx.map(i => hdrs[i]) };
+  }
+
+  // The consolidation settings panel.
+  function renderConsolidateUI(){
+    document.getElementById('consolidateEnabled').checked = consolidateEnabled;
+    document.getElementById('consolidateBody').classList.toggle('hidden', !consolidateEnabled);
+    document.getElementById('consolidateIgnoreCase').checked = consolidateIgnoreCase;
+    document.getElementById('consolidateAddCount').checked = consolidateAddCount;
+    document.getElementById('consolidateCountName').value = consolidateCountName;
+
+    const keysEl = document.getElementById('consolidateKeys');
+    keysEl.innerHTML = colConfig.map((c, i) => `
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
+        <input type="checkbox" class="cons-key" value="${i}" ${consolidateKeys.includes(c.name) ? 'checked' : ''}> ${escapeHtml(c.name)}
+      </label>`).join('')
+      + (consolidateEnabled && !consolidateKeys.length
+          ? '<em style="width:100%;color:var(--red);font-size:12px;">Tick at least one identifier column.</em>' : '');
+    keysEl.querySelectorAll('.cons-key').forEach(cb => cb.addEventListener('change', () => {
+      consolidateKeys = colConfig.filter((c, i) => keysEl.querySelector(`.cons-key[value="${i}"]`).checked).map(c => c.name);
+      renderConsolidateUI();
+    }));
+
+    const body = document.getElementById('consolidateAggBody');
+    body.innerHTML = colConfig.map((c, i) => {
+      if (consolidateKeys.includes(c.name)){
+        return `<tr><td class="col-name">${escapeHtml(c.name)}</td><td style="color:var(--ink-soft);font-size:13px;">identifier &mdash; kept as it is</td></tr>`;
+      }
+      const cur = consolidateAggs[c.name] || 'first';
+      return `<tr><td class="col-name">${escapeHtml(c.name)}</td><td><select class="cons-agg" data-i="${i}">`
+        + AGG_OPTIONS.map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`).join('')
+        + '</select></td></tr>';
+    }).join('');
+    body.querySelectorAll('.cons-agg').forEach(sel => sel.addEventListener('change', e => {
+      consolidateAggs[colConfig[+e.target.dataset.i].name] = e.target.value;
+    }));
+  }
+
+  document.getElementById('consolidateEnabled').addEventListener('change', e => {
+    consolidateEnabled = e.target.checked; renderConsolidateUI(); renderFormulaColButtons();
+  });
+  document.getElementById('consolidateIgnoreCase').addEventListener('change', e => { consolidateIgnoreCase = e.target.checked; });
+  document.getElementById('consolidateAddCount').addEventListener('change', e => {
+    consolidateAddCount = e.target.checked; renderFormulaColButtons();
+  });
+  document.getElementById('consolidateCountName').addEventListener('change', e => {
+    consolidateCountName = e.target.value; renderFormulaColButtons();
+  });
+
+  // The whole cleaning pipeline for whichever sheet's settings are currently active.
+  // Pure computation — returns {headers, rows, stats}, doesn't touch the page.
+  function computeCleaned(){
     const dataRows = rawRows.slice(1);
 
     // 1. remove repeated heading rows. A row counts as a repeated heading when it matches the
@@ -1195,6 +1594,16 @@
     // build working header/row list keyed by original column index
     let workingHeaders = colConfig.map(c => c.name);
     let workingRows = rows.map(r => workingHeaders.map((h,i) => r[i] !== undefined ? r[i] : ''));
+
+    // 2c. consolidate rows that share the same identifier — after unwanted rows have been removed, and
+    //     before merges / computed columns so those work on the combined figures
+    let consolidated = null;
+    const cons = consolidateRows(workingHeaders, workingRows);
+    if (cons){
+      workingHeaders = cons.headers;
+      workingRows = cons.rows;
+      consolidated = { from: cons.from, to: cons.to, blankKeyRows: cons.blankKeyRows, keys: cons.keys };
+    }
 
     // 3. merges
     merges.forEach(m => {
@@ -1328,18 +1737,35 @@
       }
     }
 
-    cleanedHeaders = workingHeaders;
-    cleanedRows = workingRows;
+    return {
+      headers: workingHeaders,
+      rows: workingRows,
+      stats: { before: dataRows.length, headings: repeatedHeaderCount, removed: blankCount + conditionCount, after: workingRows.length, consolidated }
+    };
+  }
 
-    document.getElementById('tallyBefore').textContent = dataRows.length;
-    document.getElementById('tallyHeaders').textContent = repeatedHeaderCount;
-    document.getElementById('tallyBlank').textContent = blankCount + conditionCount;
-    document.getElementById('tallyAfter').textContent = cleanedRows.length;
+  // Clean the ACTIVE sheet and show its preview.
+  function processSheet(opts){
+    const res = computeCleaned();
+    cleanedHeaders = res.headers;
+    cleanedRows = res.rows;
+
+    document.getElementById('tallyBefore').textContent = res.stats.before;
+    document.getElementById('tallyHeaders').textContent = res.stats.headings;
+    document.getElementById('tallyBlank').textContent = res.stats.removed;
+    document.getElementById('tallyAfter').textContent = res.stats.after;
+    const cn = res.stats.consolidated;
+    document.getElementById('consolidateNote').textContent = cn
+      ? `Consolidated ${cn.from} rows into ${cn.to}, matched on ${cn.keys.join(' + ')}`
+        + (cn.blankKeyRows ? `; ${cn.blankKeyRows} row${cn.blankKeyRows === 1 ? '' : 's'} with no identifier kept as they are` : '') + '.'
+      : '';
+    document.getElementById('resultSheetName').textContent =
+      sheetStates.length > 1 && sheetStates[activeSheet] ? ' \u2014 sheet: ' + sheetStates[activeSheet].name : '';
 
     renderPreview();
     resultSection.classList.remove('hidden');
     document.getElementById('stamp').classList.remove('show');
-    resultSection.scrollIntoView({behavior:'smooth', block:'start'});
+    if (!opts || opts.scroll !== false) resultSection.scrollIntoView({behavior:'smooth', block:'start'});
   }
 
   function renderPreview(){
@@ -1412,24 +1838,28 @@
     return ws;
   }
 
-  document.getElementById('downloadBtn').addEventListener('click', () => {
-    // re-run the full clean using whatever settings are current right now — otherwise this
-    // would silently download whatever was generated by the last "Clean the sheet" click,
-    // even if columns/rules/conditions were changed afterward without re-clicking it
-    processSheet();
+  // Excel tab names: max 31 characters, none of  \ / ? * [ ] :  and unique regardless of case.
+  function uniqueSheetName(base, used){
+    const clean = String(base).replace(/[\\/?*\[\]:]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 31) || 'Sheet';
+    let cand = clean, n = 2;
+    while (used.has(cand.toLowerCase())){
+      const suffix = '_' + n++;
+      cand = clean.slice(0, 31 - suffix.length) + suffix;
+    }
+    used.add(cand.toLowerCase());
+    return cand;
+  }
 
-    const wb = XLSX.utils.book_new();
-    const splitEnabled = document.getElementById('splitSheetsEnabled').checked;
-    const splitColLabel = document.getElementById('splitSheetsColumn').value;
-    const splitColSourceName = (() => {
-      // the split dropdown lists ORIGINAL column names; translate to the (possibly renamed) label actually present in cleanedHeaders
-      const cfg = colConfig.find(c => c.name === splitColLabel);
-      const label = cfg && cfg.rename && cfg.rename.trim() ? cfg.rename.trim() : splitColLabel;
-      return label;
-    })();
-    const splitIdx = splitEnabled ? cleanedHeaders.indexOf(splitColSourceName) : -1;
+  // Add the sheet that has just been cleaned (cleanedHeaders / cleanedRows) to the workbook: one tab, or one
+  // tab per value of the split column. `prefix` is the source sheet's name when the file has several sheets.
+  // Returns how many tabs were added.
+  function appendToWorkbook(wb, used, prefix){
+    // the split dropdown lists ORIGINAL column names; find the (possibly renamed) label actually in the output
+    const cfg = colConfig.find(c => c.name === splitColName);
+    const splitLabel = cfg && cfg.rename && cfg.rename.trim() ? cfg.rename.trim() : splitColName;
+    const splitIdx = splitEnabled ? cleanedHeaders.indexOf(splitLabel) : -1;
 
-    if (splitEnabled && splitIdx >= 0){
+    if (splitIdx >= 0 && cleanedRows.length){
       const groups = {};
       const order = [];
       cleanedRows.forEach(r => {
@@ -1438,23 +1868,55 @@
         if (!groups[key]){ groups[key] = []; order.push(key); }
         groups[key].push(r);
       });
-      const usedNames = new Set();
       order.forEach(key => {
-        let sheetName = key.replace(/[\\/?*\[\]:]/g, ' ').trim().slice(0, 31) || 'Sheet';
-        let base = sheetName, n = 2;
-        while (usedNames.has(sheetName)){
-          sheetName = (base.slice(0, 28) + '_' + n);
-          n++;
-        }
-        usedNames.add(sheetName);
-        XLSX.utils.book_append_sheet(wb, sheetFromRows(groups[key], true), sheetName);
+        const base = prefix ? prefix + ' - ' + key : key;
+        XLSX.utils.book_append_sheet(wb, sheetFromRows(groups[key], true), uniqueSheetName(base, used));
       });
-    } else {
-      XLSX.utils.book_append_sheet(wb, sheetFromRows(cleanedRows, false), 'Cleaned Data');
+      return order.length;
     }
+    XLSX.utils.book_append_sheet(wb, sheetFromRows(cleanedRows, false), uniqueSheetName(prefix || 'Cleaned Data', used));
+    return 1;
+  }
 
-    XLSX.writeFile(wb, 'Cleaned_Sheet.xlsx');
+  function renderMultiSummary(summary){
+    const el = document.getElementById('multiSummary');
+    if (sheetStates.length <= 1){ el.innerHTML = ''; return; }
+    let html = '<strong>In this download</strong><br>' + summary.map(s =>
+      `${escapeHtml(s.name)}: ${s.before} rows read &rarr; ${s.after} kept` + (s.tabs > 1 ? ` (${s.tabs} tabs)` : '')
+    ).join('<br>');
+    const left = sheetStates.filter(s => !s.include).map(s => escapeHtml(s.name));
+    if (left.length) html += '<br><span style="opacity:.7;">Not included: ' + left.join(', ') + '</span>';
+    el.innerHTML = html;
+  }
+
+  document.getElementById('downloadBtn').addEventListener('click', () => {
+    // Re-run the full clean for every included sheet using its CURRENT settings — otherwise this would
+    // silently download whatever an earlier "Clean the sheet" click produced, even if settings changed since.
+    saveActiveSheet();
+    const included = sheetStates.filter(s => s.include);
+    if (!included.length){ alert('Tick at least one sheet to include in the download.'); return; }
+
+    const multi = sheetStates.length > 1;
+    const wb = XLSX.utils.book_new();
+    const used = new Set();
+    const summary = [];
+
+    included.forEach(st => {
+      activateState(st);                       // silent: use this sheet's settings
+      const res = computeCleaned();
+      cleanedHeaders = res.headers;
+      cleanedRows = res.rows;
+      const tabs = appendToWorkbook(wb, used, multi ? st.name : null);
+      summary.push({ name: st.name, before: res.stats.before, after: res.stats.after, tabs });
+    });
+
+    // hand the page's variables back to the sheet being viewed, and refresh its preview
+    activateState(sheetStates[activeSheet]);
+    processSheet({ scroll: false });
+
+    XLSX.writeFile(wb, multi ? 'Cleaned_Workbook.xlsx' : 'Cleaned_Sheet.xlsx');
     document.getElementById('stamp').classList.add('show');
+    renderMultiSummary(summary);
   });
 })();
 </script>
