@@ -310,7 +310,22 @@
     </div>
     <div id="rulesList" style="margin-top:14px;font-size:13px;color:var(--ink-soft);"></div>
 
-    <div class="section-label" style="margin-top:34px;">Step 2c &nbsp;&mdash;&nbsp; Computed columns</div>
+    <div class="section-label" style="margin-top:34px;">Step 2c &nbsp;&mdash;&nbsp; Insert new columns</div>
+    <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
+      Add a brand-new column with a fixed heading and, optionally, the same value in every row &mdash; a note, a status,
+      a financial year, or just an empty column left for later. Position it afterwards in
+      <strong>Step 2i (Reorder columns)</strong> below, alongside your existing columns.
+    </p>
+    <div class="adv-row">
+      <label>heading</label>
+      <input type="text" id="insertColName" placeholder="e.g. Remarks" style="width:180px;">
+      <label>value for every row</label>
+      <input type="text" id="insertColValue" placeholder="leave blank for an empty column" style="width:220px;">
+      <button class="small-btn" id="addInsertColBtn">Insert column</button>
+    </div>
+    <div id="insertColList" style="margin-top:10px;font-size:13px;color:var(--ink-soft);"></div>
+
+    <div class="section-label" style="margin-top:34px;">Step 2d &nbsp;&mdash;&nbsp; Computed columns</div>
     <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
       Click columns below to drop them into the formula box, then combine them with +, &minus;, *, /, and parentheses.
       Example: <code>{Amount Spent} / {Amount Already Alloted by the High Court} * 100</code>
@@ -328,7 +343,7 @@
     </div>
     <div id="formulaList" style="margin-top:10px;font-size:13px;color:var(--ink-soft);"></div>
 
-    <div class="section-label" style="margin-top:34px;">Step 2d &nbsp;&mdash;&nbsp; Remove rows by condition</div>
+    <div class="section-label" style="margin-top:34px;">Step 2e &nbsp;&mdash;&nbsp; Remove rows by condition</div>
     <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
       Build a set of conditions that must <em>all</em> be true (AND), then save it as one delete condition.
       Add more sets to cover different cases &mdash; a row is removed if it matches <em>any</em> saved set (OR).
@@ -355,7 +370,7 @@
     </div>
     <div id="condGroupsList" style="margin-top:14px;font-size:13px;color:var(--ink-soft);"></div>
 
-    <div class="section-label" style="margin-top:34px;">Step 2e &nbsp;&mdash;&nbsp; Consolidate rows by identifier</div>
+    <div class="section-label" style="margin-top:34px;">Step 2f &nbsp;&mdash;&nbsp; Consolidate rows by identifier</div>
     <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
       Combine all rows that share the same identifier &mdash; a name, ID, account number and so on &mdash; into a single row,
       adding up (or otherwise combining) their values. This runs after unwanted rows have been removed and before computed columns,
@@ -382,7 +397,7 @@
       <p style="font-size:12px;color:var(--ink-soft);margin:10px 0 0;">Rows whose identifier is blank are left as they are &mdash; they are never combined with each other.</p>
     </div>
 
-    <div class="section-label" style="margin-top:34px;">Step 2f &nbsp;&mdash;&nbsp; Split output into sheets</div>
+    <div class="section-label" style="margin-top:34px;">Step 2g &nbsp;&mdash;&nbsp; Split output into sheets</div>
     <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
       Instead of one flat sheet, split the cleaned data into a separate tab per value of a column &mdash;
       e.g. one tab per district, department, or month.
@@ -392,7 +407,7 @@
       <select id="splitSheetsColumn"></select>
     </div>
 
-    <div class="section-label" style="margin-top:34px;">Step 2g &nbsp;&mdash;&nbsp; Sort rows</div>
+    <div class="section-label" style="margin-top:34px;">Step 2h &nbsp;&mdash;&nbsp; Sort rows</div>
     <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
       Sort by one or more columns, in priority order &mdash; e.g. sort by District first, then by Amount Spent
       (highest first) to break ties within each district. If splitting into sheets, each tab keeps this same order.
@@ -407,7 +422,7 @@
     </div>
     <div id="sortFieldsList" style="margin-top:10px;font-size:13px;color:var(--ink-soft);"></div>
 
-    <div class="section-label" style="margin-top:34px;">Step 2h &nbsp;&mdash;&nbsp; Reorder columns</div>
+    <div class="section-label" style="margin-top:34px;">Step 2i &nbsp;&mdash;&nbsp; Reorder columns</div>
     <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
       Move columns up or down to set their final left-to-right order in the output.
     </p>
@@ -487,6 +502,7 @@
   let sortFields = [];       // [{colName, dir}] — priority order: first field wins ties broken by the next
   let columnOrder = [];      // [colName, ...] — desired final left-to-right order of the original columns
   let formulas = [];       // [{name, expr, decimals}]
+  let insertedColumns = [];  // [{name, value}] — brand-new columns with a fixed value in every row
   let splitEnabled = false;  // split the output into one tab per value of splitColName
   let splitColName = '';     // ORIGINAL column name to split on
   // consolidation: combine rows that share the same identifier into one row
@@ -508,7 +524,7 @@
   function newSheetState(name){
     return { name, include: true, rawRows: [], headers: [], colConfig: [], merges: [], splits: [], rules: [],
              conditionStaging: [], conditionGroups: [], sortFields: [], columnOrder: [], formulas: [],
-             splitEnabled: false, splitColName: '',
+             splitEnabled: false, splitColName: '', insertedColumns: [],
              consolidateEnabled: false, consolidateKeys: [], consolidateAggs: {}, consolidateIgnoreCase: true,
              consolidateAddCount: false, consolidateCountName: 'Records combined' };
   }
@@ -517,6 +533,7 @@
     st.rules = rules; st.conditionStaging = conditionStaging; st.conditionGroups = conditionGroups;
     st.sortFields = sortFields; st.columnOrder = columnOrder; st.formulas = formulas;
     st.splitEnabled = splitEnabled; st.splitColName = splitColName;
+    st.insertedColumns = insertedColumns;
     st.consolidateEnabled = consolidateEnabled; st.consolidateKeys = consolidateKeys; st.consolidateAggs = consolidateAggs;
     st.consolidateIgnoreCase = consolidateIgnoreCase; st.consolidateAddCount = consolidateAddCount;
     st.consolidateCountName = consolidateCountName;
@@ -526,6 +543,7 @@
     rules = st.rules; conditionStaging = st.conditionStaging; conditionGroups = st.conditionGroups;
     sortFields = st.sortFields; columnOrder = st.columnOrder; formulas = st.formulas;
     splitEnabled = st.splitEnabled; splitColName = st.splitColName;
+    insertedColumns = st.insertedColumns;
     consolidateEnabled = st.consolidateEnabled; consolidateKeys = st.consolidateKeys; consolidateAggs = st.consolidateAggs;
     consolidateIgnoreCase = st.consolidateIgnoreCase; consolidateAddCount = st.consolidateAddCount;
     consolidateCountName = st.consolidateCountName;
@@ -641,6 +659,7 @@
     document.getElementById('condColumn').innerHTML = colConfig.map((c,i) => `<option value="${i}">${c.name}</option>`).join('');
     renderConditionStaging();
     renderConditionGroups();
+    renderInsertColList();
     renderFormulaColButtons();
     renderFormulaList();
     renderSortFieldsList();
@@ -745,6 +764,10 @@
     renderConditionStaging();
     renderConditionGroups();
 
+    // inserted columns: reset for the new file
+    insertedColumns = [];
+    renderInsertColList();
+
     // formula builder: reset for the new file
     formulas = [];
     renderFormulaColButtons();
@@ -757,6 +780,9 @@
     // column order: defaults to the file's natural order
     columnOrder = colConfig.map(c => c.name);
     renderColumnOrderList();
+
+    // inserted columns: none by default
+    insertedColumns = [];
 
     // split-into-tabs: off by default
     splitEnabled = false;
@@ -997,7 +1023,8 @@
   function renderFormulaColButtons(){
     const holder = document.getElementById('formulaColButtons');
     const extraNames = (consolidateEnabled && consolidateAddCount) ? [countColumnName(colConfig.map(c => c.name))] : [];
-    holder.innerHTML = colConfig.map(c => c.name).concat(extraNames)
+    const insertedNames = insertedColumns.map(c => c.name);
+    holder.innerHTML = colConfig.map(c => c.name).concat(extraNames).concat(insertedNames)
       .map(n => `<button type="button" class="small-btn formula-col-btn" data-name="${n.replace(/"/g,'&quot;')}">${n}</button>`).join('');
     holder.querySelectorAll('.formula-col-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1013,6 +1040,41 @@
     });
   }
 
+  document.getElementById('addInsertColBtn').addEventListener('click', () => {
+    const name = normName(document.getElementById('insertColName').value);
+    const value = document.getElementById('insertColValue').value;
+    if (!name){ alert('Give the new column a heading.'); return; }
+    const taken = colConfig.some(c => normName(c.name).toLowerCase() === name.toLowerCase())
+      || insertedColumns.some(c => c.name.toLowerCase() === name.toLowerCase())
+      || formulas.some(f => normName(f.name).toLowerCase() === name.toLowerCase());
+    if (taken){ alert('A column with that heading already exists — pick a different name.'); return; }
+    insertedColumns.push({ name, value });
+    columnOrder.push(name);          // so it shows up in Step 2i (Reorder columns) right away
+    document.getElementById('insertColName').value = '';
+    document.getElementById('insertColValue').value = '';
+    renderInsertColList();
+    renderColumnOrderList();
+    renderFormulaColButtons();
+  });
+
+  function renderInsertColList(){
+    const el = document.getElementById('insertColList');
+    if (!insertedColumns.length){
+      el.innerHTML = '<em>No columns inserted yet.</em>';
+      return;
+    }
+    el.innerHTML = insertedColumns.map((c,i) =>
+      `&#8226; <strong>${escapeHtml(c.name)}</strong>${c.value ? ' = ' + escapeHtml(c.value) : ' (empty)'} &nbsp;<button class="small-btn" data-i="${i}" style="padding:2px 8px;">remove</button>`
+    ).join('<br>');
+    el.querySelectorAll('button').forEach(b => b.addEventListener('click', e => {
+      const removed = insertedColumns.splice(+e.target.dataset.i, 1)[0];
+      columnOrder = columnOrder.filter(n => n !== removed.name);
+      renderInsertColList();
+      renderColumnOrderList();
+      renderFormulaColButtons();
+    }));
+  }
+
   document.getElementById('addFormulaBtn').addEventListener('click', () => {
     const expr = document.getElementById('formulaExpr').value.trim();
     const name = document.getElementById('formulaName').value.trim();
@@ -1022,16 +1084,21 @@
     const problem = validateFormula(expr);
     if (problem){ alert(problem); return; }
     formulas.push({ name, expr, decimals });
+    columnOrder.push(name);          // so it shows up in Step 2i (Reorder columns) right away
     document.getElementById('formulaExpr').value = '';
     document.getElementById('formulaName').value = '';
     renderFormulaList();
+    renderColumnOrderList();
   });
 
   function renderFormulaList(){
     const el = document.getElementById('formulaList');
     el.innerHTML = formulas.map((f,i) => `&#8226; <strong>${f.name}</strong> = ${f.expr} <span style="opacity:.7;">(${f.decimals} dp)</span> &nbsp;<button class="small-btn" data-i="${i}" style="padding:2px 8px;">remove</button>`).join('<br>');
     el.querySelectorAll('button').forEach(b => b.addEventListener('click', e => {
-      formulas.splice(+e.target.dataset.i, 1); renderFormulaList();
+      const removed = formulas.splice(+e.target.dataset.i, 1)[0];
+      columnOrder = columnOrder.filter(n => n !== removed.name);
+      renderFormulaList();
+      renderColumnOrderList();
     }));
   }
 
@@ -1173,6 +1240,7 @@
     const countCol = (consolidateEnabled && consolidateAddCount) ? [countColumnName(colConfig.map(c => c.name))] : [];
     const known = new Set(colConfig.map(c => normName(c.name).toLowerCase())
       .concat(countCol.map(n => normName(n).toLowerCase()))
+      .concat(insertedColumns.map(c => normName(c.name).toLowerCase()))
       .concat(formulas.map(f => normName(f.name).toLowerCase())));
     const unknown = [];
     expr.replace(/\{([^}]*)\}/g, (whole, name) => {
@@ -1214,6 +1282,7 @@
       conditionGroups: conditionGroups.map(group => group.map(c => ({ colName: c.colName, op: c.op, value: c.value }))),
       sortFields: sortFields.map(f => ({ colName: f.colName, dir: f.dir })),
       columnOrder: columnOrder.slice(),
+      insertedColumns: insertedColumns.map(c => ({ name: c.name, value: c.value })),
       formulas: formulas.map(f => ({ name: f.name, expr: f.expr, decimals: f.decimals })),
       merges: merges.map(m => ({
         aName: colConfig[m.a] ? colConfig[m.a].name : null,
@@ -1242,6 +1311,7 @@
     (tpl.conditions || []).forEach(c => { c.colName = normName(c.colName); });
     (tpl.sortFields || []).forEach(f => { f.colName = normName(f.colName); });
     tpl.columnOrder = (tpl.columnOrder || []).map(normName);
+    (tpl.insertedColumns || []).forEach(c => { c.name = normName(c.name); });
     (tpl.merges || []).forEach(m => { m.aName = normName(m.aName); m.bName = normName(m.bName); });
     (tpl.splits || []).forEach(s => { s.colName = normName(s.colName); });
     if (tpl.consolidate){
@@ -1287,13 +1357,26 @@
     sortFields = (tpl.sortFields || []).filter(f => colConfig.some(c => c.name === f.colName));
     renderSortFieldsList();
 
-    columnOrder = (tpl.columnOrder || []).filter(n => colConfig.some(c => c.name === n));
-    colConfig.forEach(c => { if (!columnOrder.includes(c.name)) columnOrder.push(c.name); });
+    // inserted columns (older templates don't have this — leave any current ones alone)
+    if (tpl.insertedColumns){
+      insertedColumns = tpl.insertedColumns.map(c => ({ name: c.name, value: c.value }));
+      renderInsertColList();
+    }
+
+    // (columnOrder is finalized below, after formulas are restored, since those also need to be included)
     renderColumnOrderList();
+    renderFormulaColButtons();
 
     // formula expressions reference {Column Name} tokens directly, so they carry over as-is
     formulas = (tpl.formulas || []).map(f => ({ name: f.name, expr: f.expr, decimals: f.decimals }));
     renderFormulaList();
+
+    columnOrder = (tpl.columnOrder || []).filter(n =>
+      colConfig.some(c => c.name === n) || insertedColumns.some(c => c.name === n) || formulas.some(f => f.name === n));
+    colConfig.forEach(c => { if (!columnOrder.includes(c.name)) columnOrder.push(c.name); });
+    insertedColumns.forEach(c => { if (!columnOrder.includes(c.name)) columnOrder.push(c.name); });
+    formulas.forEach(f => { if (!columnOrder.includes(f.name)) columnOrder.push(f.name); });
+    renderColumnOrderList();
 
     merges = (tpl.merges || []).map(m => {
       const a = colConfig.findIndex(c => c.name === m.aName);
@@ -1641,7 +1724,14 @@
       });
     });
 
-    // 5. computed formula columns — evaluated against whatever columns exist at this point,
+    // 5. insert new columns — a fixed heading and (optionally) the same value in every row.
+    //    Placed before computed columns so a formula can reference one of these if useful.
+    insertedColumns.forEach(c => {
+      workingHeaders.push(c.name);
+      workingRows.forEach(r => { r.push(c.value); });
+    });
+
+    // 6. computed formula columns — evaluated against whatever columns exist at this point,
     //    so a formula can reference a column even if that column gets removed in the next step,
     //    and each formula can in turn reference an earlier formula's output column
     formulas.forEach(f => {
@@ -1654,7 +1744,7 @@
       workingRows.forEach((r, ri) => { r.push(values[ri]); });
     });
 
-    // 6. remove columns marked for removal (recompute by name since merges/splits/formulas may have shifted positions)
+    // 7. remove columns marked for removal (recompute by name since merges/splits/formulas may have shifted positions)
     const removeNames = colConfig.filter(c => c.remove).map(c => c.name);
     removeNames.forEach(name => {
       const idx = workingHeaders.indexOf(name);
@@ -1664,7 +1754,7 @@
       }
     });
 
-    // 7. apply per-column formatting (title case / upper / lower / trim / round)
+    // 8. apply per-column formatting (title case / upper / lower / trim / round)
     colConfig.forEach(c => {
       if (c.format === 'none') return;
       const idx = workingHeaders.indexOf(c.name);
@@ -1672,7 +1762,7 @@
       workingRows.forEach(r => { r[idx] = formatValue(r[idx], c); });
     });
 
-    // 8. rename headers — applied before sort/renumber so those steps can look columns up
+    // 9. rename headers — applied before sort/renumber so those steps can look columns up
     //    by their final label (columns that were merged/split away no longer match, and are skipped)
     colConfig.forEach(c => {
       if (removeNames.includes(c.name)) return;
@@ -1682,7 +1772,7 @@
       if (idx >= 0) workingHeaders[idx] = newName;
     });
 
-    // 9. reorder columns per the configured column order — uses each original column's current
+    // 10. reorder columns per the configured column order — uses each original column's current
     //    (possibly renamed) label; a merged/split/computed column isn't part of this list, so it
     //    simply stays wherever it currently sits, appended after the explicitly ordered columns
     if (columnOrder.length){
@@ -1698,7 +1788,7 @@
       workingRows = workingRows.map(r => newIdxOrder.map(i => r[i]));
     }
 
-    // 10. sort rows by the configured priority-ordered fields (first field wins ties broken by
+    // 11. sort rows by the configured priority-ordered fields (first field wins ties broken by
     //    the next, and so on). Numeric comparison when both sides parse as numbers, otherwise
     //    a natural-order text comparison.
     if (sortFields.length){
@@ -1726,7 +1816,7 @@
       });
     }
 
-    // 11. renumber serial column — done last so the numbers reflect the FINAL row order
+    // 12. renumber serial column — done last so the numbers reflect the FINAL row order
     //     (after sorting), not the order rows happened to be in before that
     const serialCfg = colConfig.find(c => c.serial);
     if (serialCfg && !removeNames.includes(serialCfg.name)){
