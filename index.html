@@ -348,6 +348,8 @@
       Build a set of conditions that must <em>all</em> be true (AND), then save it as one delete condition.
       Add more sets to cover different cases &mdash; a row is removed if it matches <em>any</em> saved set (OR).
       Example: (Amount Spent &lt; 1000) <strong>AND</strong> (Percentage Expenditure &ge; 50).
+      The column list includes any computed or inserted columns you've added, and checks their final values
+      (a consolidated total, for instance) &mdash; not the original raw figures.
     </p>
     <div class="adv-row">
       <select id="condColumn"></select>
@@ -497,8 +499,10 @@
   let merges = [];        // {a, b, sep, name}
   let splits = [];        // {col, delim}
   let rules = [];          // [{cols:[idx,...]}]
-  let conditionStaging = []; // [{colIdx, colName, op, value}] — the AND-set currently being built
-  let conditionGroups = [];  // [[{colIdx, colName, op, value}, ...], ...] — each inner array ANDed, groups OR'd
+  let conditionStaging = []; // [{colName, op, value}] — the AND-set currently being built
+  let conditionGroups = [];  // [[{colName, op, value}, ...], ...] — each inner array ANDed, groups OR'd.
+                              // Column is resolved by NAME each run (not a fixed index), since this now runs
+                              // after computed columns exist and can reference an original, inserted, or formula column.
   let sortFields = [];       // [{colName, dir}] — priority order: first field wins ties broken by the next
   let columnOrder = [];      // [colName, ...] — desired final left-to-right order of the original columns
   let formulas = [];       // [{name, expr, decimals}]
@@ -656,7 +660,7 @@
     renderSplitList();
     renderRuleBuilder();
     renderRulesList();
-    document.getElementById('condColumn').innerHTML = colConfig.map((c,i) => `<option value="${i}">${c.name}</option>`).join('');
+    refreshCondColumnOptions();
     renderConditionStaging();
     renderConditionGroups();
     renderInsertColList();
@@ -760,7 +764,7 @@
     // value conditions: reset for the new file
     conditionStaging = [];
     conditionGroups = [];
-    document.getElementById('condColumn').innerHTML = colConfig.map((c,i) => `<option value="${i}">${c.name}</option>`).join('');
+    refreshCondColumnOptions();
     renderConditionStaging();
     renderConditionGroups();
 
@@ -920,6 +924,18 @@
     renderColumnOrderList();
   });
 
+  // Every column a condition can currently check: original (kept) columns, inserted columns, and
+  // computed formula columns — refreshed whenever any of those three lists change.
+  function refreshCondColumnOptions(){
+    const names = colConfig.map(c => c.name)
+      .concat(insertedColumns.map(c => c.name))
+      .concat(formulas.map(f => f.name));
+    const sel = document.getElementById('condColumn');
+    const current = sel.value;
+    sel.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    if (names.includes(current)) sel.value = current;
+  }
+
   document.getElementById('addRuleBtn').addEventListener('click', () => {
     const checked = Array.from(document.querySelectorAll('.rule-col-check:checked')).map(el => +el.value);
     if (!checked.length){ alert('Tick at least one column for this condition.'); return; }
@@ -949,11 +965,12 @@
   };
 
   document.getElementById('addCondBtn').addEventListener('click', () => {
-    const colIdx = +document.getElementById('condColumn').value;
+    const colName = document.getElementById('condColumn').value;
     const op = document.getElementById('condOperator').value;
     const value = document.getElementById('condValue').value.trim();
+    if (!colName){ alert('There are no columns to check yet.'); return; }
     if (value === ''){ alert('Enter a value to compare against.'); return; }
-    conditionStaging.push({ colIdx, colName: colConfig[colIdx].name, op, value });
+    conditionStaging.push({ colName, op, value });
     document.getElementById('condValue').value = '';
     renderConditionStaging();
   });
@@ -1055,6 +1072,7 @@
     renderInsertColList();
     renderColumnOrderList();
     renderFormulaColButtons();
+    refreshCondColumnOptions();
   });
 
   function renderInsertColList(){
@@ -1072,6 +1090,7 @@
       renderInsertColList();
       renderColumnOrderList();
       renderFormulaColButtons();
+      refreshCondColumnOptions();
     }));
   }
 
@@ -1089,6 +1108,7 @@
     document.getElementById('formulaName').value = '';
     renderFormulaList();
     renderColumnOrderList();
+    refreshCondColumnOptions();
   });
 
   function renderFormulaList(){
@@ -1099,6 +1119,7 @@
       columnOrder = columnOrder.filter(n => n !== removed.name);
       renderFormulaList();
       renderColumnOrderList();
+      refreshCondColumnOptions();
     }));
   }
 
@@ -1344,11 +1365,13 @@
     // supports both the current grouped format and older templates saved as a flat list
     // (each legacy condition becomes its own single-condition group)
     const rawGroups = tpl.conditionGroups || (tpl.conditions ? tpl.conditions.map(c => [c]) : []);
+    // a condition can reference an original column, or one that's about to be restored below
+    // (insertedColumns / formulas) — check against the template's own declared names for those
+    const willExist = new Set(colConfig.map(c => c.name)
+      .concat((tpl.insertedColumns || []).map(c => c.name))
+      .concat((tpl.formulas || []).map(f => f.name)));
     conditionGroups = rawGroups.map(group =>
-      group.map(c => {
-        const idx = colConfig.findIndex(cc => cc.name === c.colName);
-        return idx >= 0 ? { colIdx: idx, colName: c.colName, op: c.op, value: c.value } : null;
-      }).filter(Boolean)
+      group.map(c => willExist.has(c.colName) ? { colName: c.colName, op: c.op, value: c.value } : null).filter(Boolean)
     ).filter(group => group.length);
     conditionStaging = [];
     renderConditionStaging();
@@ -1370,6 +1393,9 @@
     // formula expressions reference {Column Name} tokens directly, so they carry over as-is
     formulas = (tpl.formulas || []).map(f => ({ name: f.name, expr: f.expr, decimals: f.decimals }));
     renderFormulaList();
+    refreshCondColumnOptions();
+    renderConditionStaging();
+    renderConditionGroups();
 
     columnOrder = (tpl.columnOrder || []).filter(n =>
       colConfig.some(c => c.name === n) || insertedColumns.some(c => c.name === n) || formulas.some(f => f.name === n));
@@ -1663,17 +1689,6 @@
       });
     }
 
-    // 2b. remove rows matching ANY saved condition-set (each set's conditions must ALL be true — AND;
-    //     a row is removed if it matches any one saved set — OR between sets)
-    let conditionCount = 0;
-    if (conditionGroups.length){
-      rows = rows.filter(r => {
-        const matchesAnyGroup = conditionGroups.some(group => group.every(c => conditionMatches(r[c.colIdx], c.op, c.value)));
-        if (matchesAnyGroup) conditionCount++;
-        return !matchesAnyGroup;
-      });
-    }
-
     // build working header/row list keyed by original column index
     let workingHeaders = colConfig.map(c => c.name);
     let workingRows = rows.map(r => workingHeaders.map((h,i) => r[i] !== undefined ? r[i] : ''));
@@ -1743,6 +1758,26 @@
       workingHeaders.push(f.name);
       workingRows.forEach((r, ri) => { r.push(values[ri]); });
     });
+
+    // 6b. remove rows matching ANY saved condition-set (each set's conditions must ALL be true — AND;
+    //     a row is removed if it matches any one saved set — OR between sets). Runs here, after computed
+    //     columns and consolidation, so a condition can check a formula result or a consolidated total —
+    //     not just the original raw value. Each condition's column is resolved by name against whatever
+    //     exists right now; a condition whose column no longer exists (merged/split away) is skipped, and
+    //     a set left with no valid conditions can't match anything.
+    let conditionCount = 0;
+    if (conditionGroups.length){
+      const resolvedGroups = conditionGroups.map(group =>
+        group.map(c => ({ idx: workingHeaders.indexOf(c.colName), op: c.op, value: c.value })).filter(c => c.idx >= 0)
+      ).filter(group => group.length);
+      if (resolvedGroups.length){
+        workingRows = workingRows.filter(r => {
+          const matchesAnyGroup = resolvedGroups.some(group => group.every(c => conditionMatches(r[c.idx], c.op, c.value)));
+          if (matchesAnyGroup) conditionCount++;
+          return !matchesAnyGroup;
+        });
+      }
+    }
 
     // 7. remove columns marked for removal (recompute by name since merges/splits/formulas may have shifted positions)
     const removeNames = colConfig.filter(c => c.remove).map(c => c.name);
