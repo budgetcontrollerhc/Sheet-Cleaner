@@ -339,6 +339,8 @@
       <input type="text" id="formulaName" placeholder="Percentage Spent" style="width:200px;">
       <label>decimals</label>
       <input type="number" id="formulaDecimals" min="0" max="6" value="2" style="width:56px;">
+      <label>result goes in</label>
+      <select id="formulaTarget"></select>
       <button class="small-btn" id="addFormulaBtn">Add computed column</button>
     </div>
     <div id="formulaList" style="margin-top:10px;font-size:13px;color:var(--ink-soft);"></div>
@@ -372,31 +374,55 @@
     </div>
     <div id="condGroupsList" style="margin-top:14px;font-size:13px;color:var(--ink-soft);"></div>
 
-    <div class="section-label" style="margin-top:34px;">Step 2f &nbsp;&mdash;&nbsp; Consolidate rows by identifier</div>
+    <div class="section-label" style="margin-top:34px;">Step 2f &nbsp;&mdash;&nbsp; Group rows by identifier (consolidate / group totals)</div>
     <p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">
-      Combine all rows that share the same identifier &mdash; a name, ID, account number and so on &mdash; into a single row,
-      adding up (or otherwise combining) their values. This runs after unwanted rows have been removed and before computed columns,
-      so formulas work on the combined figures.
+      Treat all rows that share the same identifier &mdash; for example Head + District + Group &mdash; as one group, so
+      figures can be worked out <em>collectively</em> for the group. Either combine each group into a single row, or keep every
+      row (so unit-wise figures such as an allotment stay visible) and add the group's total beside it. This runs after unwanted rows
+      have been removed and before computed columns, so formulas work on the group figures.
     </p>
     <div class="adv-row">
-      <label style="color:var(--ink);"><input type="checkbox" id="consolidateEnabled"> Consolidate rows that share the same identifier</label>
+      <label style="color:var(--ink);"><input type="checkbox" id="consolidateEnabled"> Group rows that share the same identifier</label>
     </div>
     <div id="consolidateBody" class="hidden" style="margin-top:12px;">
-      <div style="font-size:12px;color:var(--ink);font-weight:600;margin-bottom:8px;">Identifier column(s) &mdash; rows are combined when all of these match</div>
+      <div style="font-size:12px;color:var(--ink);font-weight:600;margin-bottom:8px;">Identifier column(s) &mdash; rows belong to the same group when all of these match</div>
       <div id="consolidateKeys" style="display:flex;flex-wrap:wrap;gap:8px 18px;padding:14px;background:rgba(255,255,255,0.4);border:1px solid var(--rule);"></div>
       <div class="adv-row" style="margin-top:12px;">
         <label style="color:var(--ink);"><input type="checkbox" id="consolidateIgnoreCase" checked> Ignore capitalisation and extra spaces when matching identifiers</label>
       </div>
-      <div style="font-size:12px;color:var(--ink);font-weight:600;margin:16px 0 8px;">How to combine each of the other columns</div>
-      <table class="col-table">
-        <thead><tr><th>Column</th><th>Combine by</th></tr></thead>
-        <tbody id="consolidateAggBody"></tbody>
-      </table>
+      <div class="adv-row">
+        <label style="color:var(--ink);"><input type="checkbox" id="consolidateBlankSeparate" checked> If any identifier cell is blank, keep that row on its own (e.g. a unit with no Group stands alone as its own group)</label>
+      </div>
+
+      <div style="font-size:12px;color:var(--ink);font-weight:600;margin:16px 0 6px;">What to do with the rows of a group</div>
+      <div class="adv-row">
+        <label style="color:var(--ink);"><input type="radio" name="consolidateMode" id="consolidateModeCombine" value="combine" checked> Combine them into <strong>one row per group</strong></label>
+      </div>
+      <div class="adv-row">
+        <label style="color:var(--ink);"><input type="radio" name="consolidateMode" id="consolidateModeKeep" value="keep"> <strong>Keep every row</strong> and add the group's total beside each one (unit-wise figures stay, group figures are added)</label>
+      </div>
+
+      <div id="consolidateCombineBox" style="margin-top:12px;">
+        <div style="font-size:12px;color:var(--ink);font-weight:600;margin:0 0 8px;">How to combine each of the other columns</div>
+        <table class="col-table">
+          <thead><tr><th>Column</th><th>Combine by</th></tr></thead>
+          <tbody id="consolidateAggBody"></tbody>
+        </table>
+      </div>
+
+      <div id="consolidateKeepBox" class="hidden" style="margin-top:12px;">
+        <div style="font-size:12px;color:var(--ink);font-weight:600;margin:0 0 8px;">Add a "Group total" column for each of these (the total over all rows of the group)</div>
+        <div id="consolidateGroupCols" style="display:flex;flex-wrap:wrap;gap:8px 18px;padding:14px;background:rgba(255,255,255,0.4);border:1px solid var(--rule);"></div>
+      </div>
+
       <div class="adv-row" style="margin-top:12px;">
-        <label style="color:var(--ink);"><input type="checkbox" id="consolidateAddCount"> Add a column showing how many rows were combined, named</label>
+        <label style="color:var(--ink);"><input type="checkbox" id="consolidateAddCount"> Add a column showing how many rows are in each group, named</label>
         <input type="text" id="consolidateCountName" value="Records combined" style="width:180px;">
       </div>
-      <p style="font-size:12px;color:var(--ink-soft);margin:10px 0 0;">Rows whose identifier is blank are left as they are &mdash; they are never combined with each other.</p>
+      <p style="font-size:12px;color:var(--ink-soft);margin:10px 0 0;">
+        To work out something on the group's totals &mdash; a percentage, a balance &mdash; add a computed column in Step 2d that uses the combined
+        figures (or the "Group total" columns). A computed column can also <em>replace</em> an existing column such as Percentage Expenditure.
+      </p>
     </div>
 
     <div class="section-label" style="margin-top:34px;">Step 2g &nbsp;&mdash;&nbsp; Split output into sheets</div>
@@ -516,6 +542,9 @@
   let consolidateIgnoreCase = true;    // match identifiers ignoring capitalisation and extra spaces
   let consolidateAddCount = false;     // add a column showing how many rows were combined
   let consolidateCountName = 'Records combined';
+  let consolidateMode = 'combine';     // 'combine' = one row per group; 'keep' = keep every row + add group totals
+  let consolidateGroupCols = [];       // ORIGINAL column names whose group total is added (mode 'keep')
+  let consolidateBlankSeparate = true; // a row with ANY blank identifier cell stands on its own
   let cleanedHeaders = [];
   let cleanedRows = [];
 
@@ -530,7 +559,8 @@
              conditionStaging: [], conditionGroups: [], sortFields: [], columnOrder: [], formulas: [],
              splitEnabled: false, splitColName: '', insertedColumns: [],
              consolidateEnabled: false, consolidateKeys: [], consolidateAggs: {}, consolidateIgnoreCase: true,
-             consolidateAddCount: false, consolidateCountName: 'Records combined' };
+             consolidateAddCount: false, consolidateCountName: 'Records combined',
+             consolidateMode: 'combine', consolidateGroupCols: [], consolidateBlankSeparate: true };
   }
   function snapshotInto(st){
     st.rawRows = rawRows; st.headers = headers; st.colConfig = colConfig; st.merges = merges; st.splits = splits;
@@ -541,6 +571,8 @@
     st.consolidateEnabled = consolidateEnabled; st.consolidateKeys = consolidateKeys; st.consolidateAggs = consolidateAggs;
     st.consolidateIgnoreCase = consolidateIgnoreCase; st.consolidateAddCount = consolidateAddCount;
     st.consolidateCountName = consolidateCountName;
+    st.consolidateMode = consolidateMode; st.consolidateGroupCols = consolidateGroupCols;
+    st.consolidateBlankSeparate = consolidateBlankSeparate;
   }
   function activateState(st){          // silent: only swaps the variables, doesn't touch the page
     rawRows = st.rawRows; headers = st.headers; colConfig = st.colConfig; merges = st.merges; splits = st.splits;
@@ -551,6 +583,8 @@
     consolidateEnabled = st.consolidateEnabled; consolidateKeys = st.consolidateKeys; consolidateAggs = st.consolidateAggs;
     consolidateIgnoreCase = st.consolidateIgnoreCase; consolidateAddCount = st.consolidateAddCount;
     consolidateCountName = st.consolidateCountName;
+    consolidateMode = st.consolidateMode; consolidateGroupCols = st.consolidateGroupCols;
+    consolidateBlankSeparate = st.consolidateBlankSeparate;
     cleanedHeaders = []; cleanedRows = [];
   }
   function saveActiveSheet(){
@@ -670,6 +704,8 @@
     renderColumnOrderList();
     renderSplitSheetsControls();
     renderConsolidateUI();
+    refreshFormulaTargetOptions();
+    syncDerivedOrder();
     renderSheetTabs();
     updateDownloadLabel();
   }
@@ -800,6 +836,10 @@
     consolidateCountName = 'Records combined';
     consolidateAggs = {};
     colConfig.forEach((c, i) => { consolidateAggs[c.name] = defaultAggregation(c, i); });
+    consolidateMode = 'combine';
+    consolidateBlankSeparate = true;
+    // columns whose group total is offered by default in 'keep' mode: the ones that are added up
+    consolidateGroupCols = colConfig.filter(c => consolidateAggs[c.name] === 'sum').map(c => c.name);
   }
 
   function renderColConfig(){
@@ -928,8 +968,9 @@
   // computed formula columns — refreshed whenever any of those three lists change.
   function refreshCondColumnOptions(){
     const names = colConfig.map(c => c.name)
+      .concat(derivedColumnNames())
       .concat(insertedColumns.map(c => c.name))
-      .concat(formulas.map(f => f.name));
+      .concat(formulas.filter(f => !f.replaces).map(f => f.name));
     const sel = document.getElementById('condColumn');
     const current = sel.value;
     sel.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
@@ -1039,7 +1080,7 @@
 
   function renderFormulaColButtons(){
     const holder = document.getElementById('formulaColButtons');
-    const extraNames = (consolidateEnabled && consolidateAddCount) ? [countColumnName(colConfig.map(c => c.name))] : [];
+    const extraNames = derivedColumnNames();
     const insertedNames = insertedColumns.map(c => c.name);
     holder.innerHTML = colConfig.map(c => c.name).concat(extraNames).concat(insertedNames)
       .map(n => `<button type="button" class="small-btn formula-col-btn" data-name="${n.replace(/"/g,'&quot;')}">${n}</button>`).join('');
@@ -1096,14 +1137,23 @@
 
   document.getElementById('addFormulaBtn').addEventListener('click', () => {
     const expr = document.getElementById('formulaExpr').value.trim();
-    const name = document.getElementById('formulaName').value.trim();
+    const replaces = document.getElementById('formulaTarget').value;     // '' = a new column
+    const name = replaces || document.getElementById('formulaName').value.trim();
     const decimals = Math.max(0, Math.min(6, +document.getElementById('formulaDecimals').value || 0));
     if (!expr){ alert('Click columns above to build a formula first.'); return; }
     if (!name){ alert('Give the new column a name.'); return; }
+    if (replaces){
+      if (formulas.some(f => f.replaces === replaces)){ alert('"' + replaces + '" is already being replaced by another computed column — remove that one first.'); return; }
+    } else {
+      const lower = name.toLowerCase();
+      const taken = colConfig.map(c => c.name).concat(derivedColumnNames()).concat(insertedColumns.map(c => c.name))
+        .concat(formulas.filter(f => !f.replaces).map(f => f.name)).some(n => normName(n).toLowerCase() === lower);
+      if (taken){ alert('A column called "' + name + '" already exists. Pick another name — or choose "replace" in "result goes in" to overwrite that column.'); return; }
+    }
     const problem = validateFormula(expr);
     if (problem){ alert(problem); return; }
-    formulas.push({ name, expr, decimals });
-    columnOrder.push(name);          // so it shows up in Step 2i (Reorder columns) right away
+    formulas.push({ name, expr, decimals, replaces });
+    if (!replaces) columnOrder.push(name);   // a new column shows up in Step 2i (Reorder columns) right away
     document.getElementById('formulaExpr').value = '';
     document.getElementById('formulaName').value = '';
     renderFormulaList();
@@ -1111,12 +1161,25 @@
     refreshCondColumnOptions();
   });
 
+  // "Result goes in": a new column, or one of the existing columns (which the result then overwrites in place).
+  function refreshFormulaTargetOptions(){
+    const sel = document.getElementById('formulaTarget');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">a new column (named at left)</option>'
+      + colConfig.map(c => `<option value="${escapeHtml(c.name)}">replace: ${escapeHtml(c.name)}</option>`).join('');
+    if (colConfig.some(c => c.name === current)) sel.value = current;
+    document.getElementById('formulaName').disabled = !!sel.value;
+  }
+  document.getElementById('formulaTarget').addEventListener('change', e => {
+    document.getElementById('formulaName').disabled = !!e.target.value;
+  });
+
   function renderFormulaList(){
     const el = document.getElementById('formulaList');
-    el.innerHTML = formulas.map((f,i) => `&#8226; <strong>${f.name}</strong> = ${f.expr} <span style="opacity:.7;">(${f.decimals} dp)</span> &nbsp;<button class="small-btn" data-i="${i}" style="padding:2px 8px;">remove</button>`).join('<br>');
+    el.innerHTML = formulas.map((f,i) => `&#8226; <strong>${f.name}</strong>${f.replaces ? ' <span style="opacity:.7;">(replaces the existing column)</span>' : ''} = ${f.expr} <span style="opacity:.7;">(${f.decimals} dp)</span> &nbsp;<button class="small-btn" data-i="${i}" style="padding:2px 8px;">remove</button>`).join('<br>');
     el.querySelectorAll('button').forEach(b => b.addEventListener('click', e => {
       const removed = formulas.splice(+e.target.dataset.i, 1)[0];
-      columnOrder = columnOrder.filter(n => n !== removed.name);
+      if (!removed.replaces) columnOrder = columnOrder.filter(n => n !== removed.name);
       renderFormulaList();
       renderColumnOrderList();
       refreshCondColumnOptions();
@@ -1258,9 +1321,8 @@
   // Check a formula when it's added, so problems show up immediately instead of as silent blank cells.
   // Returns an error message, or '' if the formula looks fine.
   function validateFormula(expr){
-    const countCol = (consolidateEnabled && consolidateAddCount) ? [countColumnName(colConfig.map(c => c.name))] : [];
     const known = new Set(colConfig.map(c => normName(c.name).toLowerCase())
-      .concat(countCol.map(n => normName(n).toLowerCase()))
+      .concat(derivedColumnNames().map(n => normName(n).toLowerCase()))
       .concat(insertedColumns.map(c => normName(c.name).toLowerCase()))
       .concat(formulas.map(f => normName(f.name).toLowerCase())));
     const unknown = [];
@@ -1304,7 +1366,7 @@
       sortFields: sortFields.map(f => ({ colName: f.colName, dir: f.dir })),
       columnOrder: columnOrder.slice(),
       insertedColumns: insertedColumns.map(c => ({ name: c.name, value: c.value })),
-      formulas: formulas.map(f => ({ name: f.name, expr: f.expr, decimals: f.decimals })),
+      formulas: formulas.map(f => ({ name: f.name, expr: f.expr, decimals: f.decimals, replaces: f.replaces || '' })),
       merges: merges.map(m => ({
         aName: colConfig[m.a] ? colConfig[m.a].name : null,
         bName: colConfig[m.b] ? colConfig[m.b].name : null,
@@ -1316,7 +1378,8 @@
       })).filter(s => s.colName),
       splitSheets: { enabled: splitEnabled, colName: splitColName },
       consolidate: { enabled: consolidateEnabled, keys: consolidateKeys.slice(), aggs: Object.assign({}, consolidateAggs),
-                     ignoreCase: consolidateIgnoreCase, addCount: consolidateAddCount, countName: consolidateCountName }
+                     ignoreCase: consolidateIgnoreCase, addCount: consolidateAddCount, countName: consolidateCountName,
+                     mode: consolidateMode, groupCols: consolidateGroupCols.slice(), blankSeparate: consolidateBlankSeparate }
     };
   }
 
@@ -1340,7 +1403,9 @@
       const fixedAggs = {};
       Object.keys(tpl.consolidate.aggs || {}).forEach(k => { fixedAggs[normName(k)] = tpl.consolidate.aggs[k]; });
       tpl.consolidate.aggs = fixedAggs;
+      tpl.consolidate.groupCols = (tpl.consolidate.groupCols || []).map(normName);
     }
+    (tpl.formulas || []).forEach(f => { if (f.replaces) f.replaces = normName(f.replaces); });
 
     let matched = 0;
     (tpl.colConfig || []).forEach(tc => {
@@ -1391,18 +1456,41 @@
     renderFormulaColButtons();
 
     // formula expressions reference {Column Name} tokens directly, so they carry over as-is
-    formulas = (tpl.formulas || []).map(f => ({ name: f.name, expr: f.expr, decimals: f.decimals }));
+    formulas = (tpl.formulas || []).map(f => ({ name: f.name, expr: f.expr, decimals: f.decimals, replaces: f.replaces || '' }));
     renderFormulaList();
+
+    // consolidation (older templates don't have this — leave the current setting alone). Restored before the
+    // column order is finalised below, so the saved position of the columns it adds is kept.
+    if (tpl.consolidate){
+      const cn = tpl.consolidate;
+      consolidateEnabled = !!cn.enabled;
+      consolidateKeys = (cn.keys || []).filter(n => colConfig.some(c => c.name === n));
+      colConfig.forEach(c => {
+        if (cn.aggs && AGG_OPTIONS.some(o => o[0] === cn.aggs[c.name])) consolidateAggs[c.name] = cn.aggs[c.name];
+      });
+      consolidateIgnoreCase = cn.ignoreCase !== false;
+      consolidateAddCount = !!cn.addCount;
+      consolidateCountName = cn.countName || 'Records combined';
+      if (cn.mode === 'keep' || cn.mode === 'combine') consolidateMode = cn.mode;
+      if (cn.groupCols) consolidateGroupCols = cn.groupCols.filter(n => colConfig.some(c => c.name === n));
+      if (cn.blankSeparate !== undefined) consolidateBlankSeparate = !!cn.blankSeparate;
+      renderConsolidateUI();
+    }
     refreshCondColumnOptions();
     renderConditionStaging();
     renderConditionGroups();
+    refreshFormulaTargetOptions();
 
+    const derivedNow = derivedColumnNames();
     columnOrder = (tpl.columnOrder || []).filter(n =>
-      colConfig.some(c => c.name === n) || insertedColumns.some(c => c.name === n) || formulas.some(f => f.name === n));
+      colConfig.some(c => c.name === n) || insertedColumns.some(c => c.name === n) || formulas.some(f => f.name === n)
+      || derivedNow.includes(n));
     colConfig.forEach(c => { if (!columnOrder.includes(c.name)) columnOrder.push(c.name); });
     insertedColumns.forEach(c => { if (!columnOrder.includes(c.name)) columnOrder.push(c.name); });
     formulas.forEach(f => { if (!columnOrder.includes(f.name)) columnOrder.push(f.name); });
+    derivedNow.forEach(n => { if (!columnOrder.includes(n)) columnOrder.push(n); });
     renderColumnOrderList();
+    renderFormulaColButtons();
 
     merges = (tpl.merges || []).map(m => {
       const a = colConfig.findIndex(c => c.name === m.aName);
@@ -1427,21 +1515,6 @@
         splitEnabled = false;
       }
       renderSplitSheetsControls();
-    }
-
-    // consolidation (older templates don't have this — leave the current setting alone)
-    if (tpl.consolidate){
-      const cn = tpl.consolidate;
-      consolidateEnabled = !!cn.enabled;
-      consolidateKeys = (cn.keys || []).filter(n => colConfig.some(c => c.name === n));
-      colConfig.forEach(c => {
-        if (cn.aggs && AGG_OPTIONS.some(o => o[0] === cn.aggs[c.name])) consolidateAggs[c.name] = cn.aggs[c.name];
-      });
-      consolidateIgnoreCase = cn.ignoreCase !== false;
-      consolidateAddCount = !!cn.addCount;
-      consolidateCountName = cn.countName || 'Records combined';
-      renderConsolidateUI();
-      renderFormulaColButtons();
     }
 
     const total = (tpl.colConfig || []).length;
@@ -1529,6 +1602,8 @@
   // averaged instead), everything else keeps its first value. Always adjustable per column.
   function defaultAggregation(cfg, idx){
     if (cfg.serial) return 'first';
+    // unit / court codes are labels, not amounts — adding them up (1+3+6+55 = 65) is meaningless
+    if (/^(preliminary unit|unit|court number|court no)\b/i.test(cfg.name)) return 'join';
     if (guessNumericColumn(idx)) return /percent|%|\brate\b|ratio/i.test(cfg.name) ? 'average' : 'sum';
     return 'first';
   }
@@ -1558,15 +1633,46 @@
     return filled[0];
   }
 
-  // Name for the optional "how many rows were combined" column (kept unique among existing columns).
-  function countColumnName(existing){
-    const base = normName(consolidateCountName) || 'Records combined';
-    let name = base, n = 2;
-    while (existing.includes(name)) name = base + ' (' + (n++) + ')';
-    return name;
+  // The names of the columns that consolidation ADDS, in the order it adds them (kept unique among `existing`):
+  // in 'keep' mode one "Group total of <column>" per ticked column, and — if wanted — a rows-in-group count.
+  function derivedColumnNames(existing){
+    existing = existing || colConfig.map(c => c.name);
+    if (!consolidateEnabled || !consolidateKeys.some(n => existing.includes(n))) return [];
+    const taken = existing.slice(), out = [];
+    const add = base => {
+      let name = base, n = 2;
+      while (taken.includes(name)) name = base + ' (' + (n++) + ')';
+      taken.push(name); out.push(name);
+    };
+    if (consolidateMode === 'keep') consolidateGroupCols.filter(n => existing.includes(n) && !consolidateKeys.includes(n)).forEach(n => add('Group total of ' + n));
+    if (consolidateAddCount) add(normName(consolidateCountName) || 'Records combined');
+    return out;
   }
 
-  // Combine rows that share the same identifier. Returns null when consolidation is off or has no usable key.
+  // Keep the Step 2i reorder list in step with the columns consolidation adds: drop names that no longer
+  // exist, add newly available ones at the end (the user can then move them like any other column).
+  function syncDerivedOrder(){
+    const valid = new Set(colConfig.map(c => c.name)
+      .concat(insertedColumns.map(c => c.name))
+      .concat(formulas.filter(f => !f.replaces).map(f => f.name))
+      .concat(derivedColumnNames()));
+    columnOrder = columnOrder.filter(n => valid.has(n));
+    derivedColumnNames().forEach(n => { if (!columnOrder.includes(n)) columnOrder.push(n); });
+    renderColumnOrderList();
+  }
+
+  // Everything that depends on which columns consolidation adds needs refreshing after a settings change.
+  function afterConsolidateChange(){
+    syncDerivedOrder();
+    renderFormulaColButtons();
+    refreshCondColumnOptions();
+  }
+
+  // Group rows that share the same identifier. Returns null when consolidation is off or has no usable key.
+  //  mode 'combine': one output row per group (columns combined as chosen).
+  //  mode 'keep'   : every row stays, and each gets the group's total for the ticked columns beside it.
+  // A row counts as having "no identifier" when ALL its identifier cells are blank — or, if
+  // consolidateBlankSeparate is on, when ANY of them is blank (e.g. a unit with no Group stands alone).
   function consolidateRows(hdrs, rows){
     if (!consolidateEnabled) return null;
     const keyIdx = consolidateKeys.map(n => hdrs.indexOf(n)).filter(i => i >= 0);
@@ -1577,15 +1683,36 @@
       return consolidateIgnoreCase ? normName(t).toLowerCase() : t;
     };
     const groups = new Map();                 // Map keeps groups in order of first appearance
+    const rowKeys = [];
     let blankKeyRows = 0;
     rows.forEach((r, ri) => {
       const parts = keyIdx.map(i => norm(r[i]));
+      const blanks = parts.filter(x => x.trim() === '').length;
       let key;
-      if (parts.every(x => x.trim() === '')){ key = '\u0002' + ri; blankKeyRows++; }   // no identifier: never combined
+      if (blanks === parts.length || (consolidateBlankSeparate && blanks > 0)){ key = '\u0002' + ri; blankKeyRows++; }
       else key = parts.join('\u0001');
+      rowKeys.push(key);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(r);
     });
+
+    const derived = derivedColumnNames(hdrs);
+    const outHeaders = hdrs.concat(derived);
+    const keys = keyIdx.map(i => hdrs[i]);
+
+    if (consolidateMode === 'keep'){
+      const totalIdx = consolidateGroupCols.filter(n => hdrs.includes(n) && !consolidateKeys.includes(n)).map(n => hdrs.indexOf(n));
+      const totals = new Map();               // group key -> the group's total for each ticked column
+      groups.forEach((list, key) => totals.set(key, totalIdx.map(ci => aggregate(list.map(r => r[ci]), 'sum'))));
+      const outRows = rows.map((r, ri) => {
+        const key = rowKeys[ri];
+        const extra = totals.get(key).slice();
+        if (consolidateAddCount) extra.push(groups.get(key).length);
+        return r.concat(extra);
+      });
+      return { mode: 'keep', headers: outHeaders, rows: outRows, from: rows.length, to: outRows.length,
+               groupCount: groups.size, addedCols: derived.length, blankKeyRows, keys };
+    }
 
     const outRows = [];
     groups.forEach(list => {
@@ -1595,10 +1722,8 @@
       if (consolidateAddCount) out.push(list.length);
       outRows.push(out);
     });
-    const outHeaders = hdrs.slice();
-    if (consolidateAddCount) outHeaders.push(countColumnName(hdrs));
-    return { headers: outHeaders, rows: outRows, from: rows.length, to: outRows.length,
-             blankKeyRows, keys: keyIdx.map(i => hdrs[i]) };
+    return { mode: 'combine', headers: outHeaders, rows: outRows, from: rows.length, to: outRows.length,
+             groupCount: groups.size, addedCols: derived.length, blankKeyRows, keys };
   }
 
   // The consolidation settings panel.
@@ -1608,6 +1733,23 @@
     document.getElementById('consolidateIgnoreCase').checked = consolidateIgnoreCase;
     document.getElementById('consolidateAddCount').checked = consolidateAddCount;
     document.getElementById('consolidateCountName').value = consolidateCountName;
+    document.getElementById('consolidateBlankSeparate').checked = consolidateBlankSeparate;
+    document.getElementById('consolidateModeCombine').checked = consolidateMode !== 'keep';
+    document.getElementById('consolidateModeKeep').checked = consolidateMode === 'keep';
+    document.getElementById('consolidateCombineBox').classList.toggle('hidden', consolidateMode === 'keep');
+    document.getElementById('consolidateKeepBox').classList.toggle('hidden', consolidateMode !== 'keep');
+
+    // columns that can get a "Group total" (everything except the identifiers)
+    const gcEl = document.getElementById('consolidateGroupCols');
+    gcEl.innerHTML = colConfig.filter(c => !consolidateKeys.includes(c.name)).map(c => `
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
+        <input type="checkbox" class="cons-gcol" data-name="${escapeHtml(c.name)}" ${consolidateGroupCols.includes(c.name) ? 'checked' : ''}> ${escapeHtml(c.name)}
+      </label>`).join('');
+    gcEl.querySelectorAll('.cons-gcol').forEach(cb => cb.addEventListener('change', () => {
+      consolidateGroupCols = colConfig.map(c => c.name).filter(n =>
+        [...gcEl.querySelectorAll('.cons-gcol')].some(x => x.dataset.name === n && x.checked));
+      afterConsolidateChange();
+    }));
 
     const keysEl = document.getElementById('consolidateKeys');
     keysEl.innerHTML = colConfig.map((c, i) => `
@@ -1619,6 +1761,7 @@
     keysEl.querySelectorAll('.cons-key').forEach(cb => cb.addEventListener('change', () => {
       consolidateKeys = colConfig.filter((c, i) => keysEl.querySelector(`.cons-key[value="${i}"]`).checked).map(c => c.name);
       renderConsolidateUI();
+      afterConsolidateChange();
     }));
 
     const body = document.getElementById('consolidateAggBody');
@@ -1637,14 +1780,21 @@
   }
 
   document.getElementById('consolidateEnabled').addEventListener('change', e => {
-    consolidateEnabled = e.target.checked; renderConsolidateUI(); renderFormulaColButtons();
+    consolidateEnabled = e.target.checked; renderConsolidateUI(); afterConsolidateChange();
   });
   document.getElementById('consolidateIgnoreCase').addEventListener('change', e => { consolidateIgnoreCase = e.target.checked; });
+  document.getElementById('consolidateBlankSeparate').addEventListener('change', e => { consolidateBlankSeparate = e.target.checked; });
+  document.getElementById('consolidateModeCombine').addEventListener('change', e => {
+    if (e.target.checked){ consolidateMode = 'combine'; renderConsolidateUI(); afterConsolidateChange(); }
+  });
+  document.getElementById('consolidateModeKeep').addEventListener('change', e => {
+    if (e.target.checked){ consolidateMode = 'keep'; renderConsolidateUI(); afterConsolidateChange(); }
+  });
   document.getElementById('consolidateAddCount').addEventListener('change', e => {
-    consolidateAddCount = e.target.checked; renderFormulaColButtons();
+    consolidateAddCount = e.target.checked; afterConsolidateChange();
   });
   document.getElementById('consolidateCountName').addEventListener('change', e => {
-    consolidateCountName = e.target.value; renderFormulaColButtons();
+    consolidateCountName = e.target.value; afterConsolidateChange();
   });
 
   // The whole cleaning pipeline for whichever sheet's settings are currently active.
@@ -1700,7 +1850,8 @@
     if (cons){
       workingHeaders = cons.headers;
       workingRows = cons.rows;
-      consolidated = { from: cons.from, to: cons.to, blankKeyRows: cons.blankKeyRows, keys: cons.keys };
+      consolidated = { mode: cons.mode, from: cons.from, to: cons.to, groupCount: cons.groupCount,
+                       addedCols: cons.addedCols, blankKeyRows: cons.blankKeyRows, keys: cons.keys };
     }
 
     // 3. merges
@@ -1755,8 +1906,14 @@
         const result = evalFormula(f.expr, headerSnapshot, r);
         return result === '' ? '' : Number(result.toFixed(f.decimals));
       });
-      workingHeaders.push(f.name);
-      workingRows.forEach((r, ri) => { r.push(values[ri]); });
+      const targetIdx = f.replaces ? workingHeaders.indexOf(f.replaces) : -1;
+      if (targetIdx >= 0){
+        // overwrite the existing column in place (keeps its position and heading)
+        workingRows.forEach((r, ri) => { r[targetIdx] = values[ri]; });
+      } else {
+        workingHeaders.push(f.name);
+        workingRows.forEach((r, ri) => { r.push(values[ri]); });
+      }
     });
 
     // 6b. remove rows matching ANY saved condition-set (each set's conditions must ALL be true — AND;
@@ -1880,10 +2037,12 @@
     document.getElementById('tallyBlank').textContent = res.stats.removed;
     document.getElementById('tallyAfter').textContent = res.stats.after;
     const cn = res.stats.consolidated;
-    document.getElementById('consolidateNote').textContent = cn
-      ? `Consolidated ${cn.from} rows into ${cn.to}, matched on ${cn.keys.join(' + ')}`
-        + (cn.blankKeyRows ? `; ${cn.blankKeyRows} row${cn.blankKeyRows === 1 ? '' : 's'} with no identifier kept as they are` : '') + '.'
-      : '';
+    const standAlone = cn && cn.blankKeyRows
+      ? `; ${cn.blankKeyRows} row${cn.blankKeyRows === 1 ? '' : 's'} with a blank identifier cell stand${cn.blankKeyRows === 1 ? 's' : ''} on ${cn.blankKeyRows === 1 ? 'its' : 'their'} own` : '';
+    document.getElementById('consolidateNote').textContent = !cn ? ''
+      : cn.mode === 'keep'
+        ? `All ${cn.from} rows kept; added ${cn.addedCols} group column${cn.addedCols === 1 ? '' : 's'} across ${cn.groupCount} groups, matched on ${cn.keys.join(' + ')}${standAlone}.`
+        : `Consolidated ${cn.from} rows into ${cn.to}, matched on ${cn.keys.join(' + ')}${standAlone}.`;
     document.getElementById('resultSheetName').textContent =
       sheetStates.length > 1 && sheetStates[activeSheet] ? ' \u2014 sheet: ' + sheetStates[activeSheet].name : '';
 
@@ -1923,7 +2082,12 @@
       }
     });
     formulas.forEach(f => {
-      const idx = cleanedHeaders.indexOf(f.name);
+      let label = f.name;
+      if (f.replaces){          // the replaced column may have been renamed in the output
+        const cfg = colConfig.find(c => c.name === f.replaces);
+        label = cfg && cfg.rename && cfg.rename.trim() ? cfg.rename.trim() : f.replaces;
+      }
+      const idx = cleanedHeaders.indexOf(label);
       if (idx < 0) return;
       const numFmt = f.decimals > 0 ? ('0.' + '0'.repeat(f.decimals)) : '0';
       for (let rIdx = 0; rIdx < rowCount; rIdx++){
