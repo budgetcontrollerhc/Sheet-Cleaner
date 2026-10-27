@@ -413,6 +413,24 @@
       <div id="consolidateKeepBox" class="hidden" style="margin-top:12px;">
         <div style="font-size:12px;color:var(--ink);font-weight:600;margin:0 0 8px;">Add a "Group total" column for each of these (the total over all rows of the group)</div>
         <div id="consolidateGroupCols" style="display:flex;flex-wrap:wrap;gap:8px 18px;padding:14px;background:rgba(255,255,255,0.4);border:1px solid var(--rule);"></div>
+
+        <div style="font-size:12px;color:var(--ink);font-weight:600;margin:16px 0 6px;">Where to show the group figures</div>
+        <div class="adv-row">
+          <label style="color:var(--ink);"><input type="radio" name="groupShow" id="groupShowFirst" value="first" checked> Once per group &mdash; on the <strong>first</strong> row of the group</label>
+        </div>
+        <div class="adv-row">
+          <label style="color:var(--ink);"><input type="radio" name="groupShow" id="groupShowLast" value="last"> Once per group &mdash; on the <strong>last</strong> row of the group (like a subtotal)</label>
+        </div>
+        <div class="adv-row">
+          <label style="color:var(--ink);"><input type="radio" name="groupShow" id="groupShowEvery" value="every"> On <strong>every</strong> row of the group (handy if you will filter or pivot the sheet)</label>
+        </div>
+        <div class="adv-row">
+          <label style="color:var(--ink);"><input type="checkbox" id="groupTogether" checked> Keep the rows of each group together (a group's rows follow one another)</label>
+        </div>
+        <div id="groupFigureBox" style="margin-top:8px;">
+          <div style="font-size:12px;color:var(--ink);font-weight:600;margin:0 0 8px;">Columns that hold group figures (shown once per group) &mdash; the group totals and anything computed from them are ticked automatically</div>
+          <div id="groupFigureCols" style="display:flex;flex-wrap:wrap;gap:8px 18px;padding:14px;background:rgba(255,255,255,0.4);border:1px solid var(--rule);"></div>
+        </div>
       </div>
 
       <div class="adv-row" style="margin-top:12px;">
@@ -545,6 +563,10 @@
   let consolidateMode = 'combine';     // 'combine' = one row per group; 'keep' = keep every row + add group totals
   let consolidateGroupCols = [];       // ORIGINAL column names whose group total is added (mode 'keep')
   let consolidateBlankSeparate = true; // a row with ANY blank identifier cell stands on its own
+  let groupShow = 'first';             // 'keep' mode: show group figures once per group — 'first' / 'last' row — or 'every' row
+  let groupTogether = true;            // 'keep' mode: bring the rows of each group next to one another
+  let groupFigureOverrides = {};       // {columnName: true/false} — overrides which columns count as group figures
+  let rowGroupKeys = new WeakMap();    // output row -> its group (so figures can be shown once per group at the very end)
   let cleanedHeaders = [];
   let cleanedRows = [];
 
@@ -560,7 +582,8 @@
              splitEnabled: false, splitColName: '', insertedColumns: [],
              consolidateEnabled: false, consolidateKeys: [], consolidateAggs: {}, consolidateIgnoreCase: true,
              consolidateAddCount: false, consolidateCountName: 'Records combined',
-             consolidateMode: 'combine', consolidateGroupCols: [], consolidateBlankSeparate: true };
+             consolidateMode: 'combine', consolidateGroupCols: [], consolidateBlankSeparate: true,
+             groupShow: 'first', groupTogether: true, groupFigureOverrides: {} };
   }
   function snapshotInto(st){
     st.rawRows = rawRows; st.headers = headers; st.colConfig = colConfig; st.merges = merges; st.splits = splits;
@@ -573,6 +596,7 @@
     st.consolidateCountName = consolidateCountName;
     st.consolidateMode = consolidateMode; st.consolidateGroupCols = consolidateGroupCols;
     st.consolidateBlankSeparate = consolidateBlankSeparate;
+    st.groupShow = groupShow; st.groupTogether = groupTogether; st.groupFigureOverrides = groupFigureOverrides;
   }
   function activateState(st){          // silent: only swaps the variables, doesn't touch the page
     rawRows = st.rawRows; headers = st.headers; colConfig = st.colConfig; merges = st.merges; splits = st.splits;
@@ -585,6 +609,7 @@
     consolidateCountName = st.consolidateCountName;
     consolidateMode = st.consolidateMode; consolidateGroupCols = st.consolidateGroupCols;
     consolidateBlankSeparate = st.consolidateBlankSeparate;
+    groupShow = st.groupShow; groupTogether = st.groupTogether; groupFigureOverrides = st.groupFigureOverrides;
     cleanedHeaders = []; cleanedRows = [];
   }
   function saveActiveSheet(){
@@ -838,6 +863,7 @@
     colConfig.forEach((c, i) => { consolidateAggs[c.name] = defaultAggregation(c, i); });
     consolidateMode = 'combine';
     consolidateBlankSeparate = true;
+    groupShow = 'first'; groupTogether = true; groupFigureOverrides = {};
     // columns whose group total is offered by default in 'keep' mode: the ones that are added up
     consolidateGroupCols = colConfig.filter(c => consolidateAggs[c.name] === 'sum').map(c => c.name);
   }
@@ -1175,6 +1201,7 @@
   });
 
   function renderFormulaList(){
+    renderGroupFigureCols();
     const el = document.getElementById('formulaList');
     el.innerHTML = formulas.map((f,i) => `&#8226; <strong>${f.name}</strong>${f.replaces ? ' <span style="opacity:.7;">(replaces the existing column)</span>' : ''} = ${f.expr} <span style="opacity:.7;">(${f.decimals} dp)</span> &nbsp;<button class="small-btn" data-i="${i}" style="padding:2px 8px;">remove</button>`).join('<br>');
     el.querySelectorAll('button').forEach(b => b.addEventListener('click', e => {
@@ -1379,7 +1406,8 @@
       splitSheets: { enabled: splitEnabled, colName: splitColName },
       consolidate: { enabled: consolidateEnabled, keys: consolidateKeys.slice(), aggs: Object.assign({}, consolidateAggs),
                      ignoreCase: consolidateIgnoreCase, addCount: consolidateAddCount, countName: consolidateCountName,
-                     mode: consolidateMode, groupCols: consolidateGroupCols.slice(), blankSeparate: consolidateBlankSeparate }
+                     mode: consolidateMode, groupCols: consolidateGroupCols.slice(), blankSeparate: consolidateBlankSeparate,
+                     groupShow, groupTogether, groupFigureOverrides: Object.assign({}, groupFigureOverrides) }
     };
   }
 
@@ -1404,6 +1432,8 @@
       Object.keys(tpl.consolidate.aggs || {}).forEach(k => { fixedAggs[normName(k)] = tpl.consolidate.aggs[k]; });
       tpl.consolidate.aggs = fixedAggs;
       tpl.consolidate.groupCols = (tpl.consolidate.groupCols || []).map(normName);
+      const fixedOv = {}; Object.keys(tpl.consolidate.groupFigureOverrides || {}).forEach(k => { fixedOv[normName(k)] = tpl.consolidate.groupFigureOverrides[k]; });
+      tpl.consolidate.groupFigureOverrides = fixedOv;
     }
     (tpl.formulas || []).forEach(f => { if (f.replaces) f.replaces = normName(f.replaces); });
 
@@ -1474,6 +1504,9 @@
       if (cn.mode === 'keep' || cn.mode === 'combine') consolidateMode = cn.mode;
       if (cn.groupCols) consolidateGroupCols = cn.groupCols.filter(n => colConfig.some(c => c.name === n));
       if (cn.blankSeparate !== undefined) consolidateBlankSeparate = !!cn.blankSeparate;
+      if (['first','last','every'].includes(cn.groupShow)) groupShow = cn.groupShow;
+      if (cn.groupTogether !== undefined) groupTogether = !!cn.groupTogether;
+      if (cn.groupFigureOverrides) groupFigureOverrides = cn.groupFigureOverrides;
       renderConsolidateUI();
     }
     refreshCondColumnOptions();
@@ -1649,6 +1682,30 @@
     return out;
   }
 
+  // Columns that hold GROUP figures (as opposed to unit-wise ones): the "Group total" / count columns consolidation
+  // adds, plus any computed column worked out from them (a group percentage, a group assessment, ...). They are
+  // picked automatically and can be overridden per column. A computed column that replaces an existing column is
+  // listed under that column's name.
+  function groupFigureCandidates(){
+    const lc = n => normName(n).toLowerCase();
+    const derived = derivedColumnNames();
+    const group = new Set(derived.map(lc));
+    const cands = derived.map(n => ({ name: n, auto: true }));
+    const isOn = c => (c.name in groupFigureOverrides) ? !!groupFigureOverrides[c.name] : c.auto;
+    formulas.forEach(f => {
+      const target = f.replaces || f.name;
+      const refs = []; String(f.expr).replace(/\{([^}]*)\}/g, (w, t) => { refs.push(lc(t)); return w; });
+      const cand = { name: target, auto: refs.some(t => group.has(t)) };
+      const existing = cands.find(c => c.name === target);
+      if (existing) existing.auto = existing.auto || cand.auto; else cands.push(cand);
+      if (isOn(existing || cand)) group.add(lc(target));      // a later formula built on this one is a group figure too
+    });
+    return cands;
+  }
+  function groupFigureNames(){
+    return groupFigureCandidates().filter(c => (c.name in groupFigureOverrides) ? !!groupFigureOverrides[c.name] : c.auto).map(c => c.name);
+  }
+
   // Keep the Step 2i reorder list in step with the columns consolidation adds: drop names that no longer
   // exist, add newly available ones at the end (the user can then move them like any other column).
   function syncDerivedOrder(){
@@ -1704,11 +1761,18 @@
       const totalIdx = consolidateGroupCols.filter(n => hdrs.includes(n) && !consolidateKeys.includes(n)).map(n => hdrs.indexOf(n));
       const totals = new Map();               // group key -> the group's total for each ticked column
       groups.forEach((list, key) => totals.set(key, totalIdx.map(ci => aggregate(list.map(r => r[ci]), 'sum'))));
-      const outRows = rows.map((r, ri) => {
+      // output order: either the source order, or each group's rows one after another (groups in order of first appearance)
+      const rowIndexOrder = groupTogether
+        ? (() => { const byKey = new Map(); rowKeys.forEach((k, ri) => { if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(ri); });
+                   return [].concat(...byKey.values()); })()
+        : rows.map((_, ri) => ri);
+      const outRows = rowIndexOrder.map(ri => {
         const key = rowKeys[ri];
         const extra = totals.get(key).slice();
         if (consolidateAddCount) extra.push(groups.get(key).length);
-        return r.concat(extra);
+        const nr = rows[ri].concat(extra);
+        rowGroupKeys.set(nr, key);
+        return nr;
       });
       return { mode: 'keep', headers: outHeaders, rows: outRows, from: rows.length, to: outRows.length,
                groupCount: groups.size, addedCols: derived.length, blankKeyRows, keys };
@@ -1726,6 +1790,21 @@
              groupCount: groups.size, addedCols: derived.length, blankKeyRows, keys };
   }
 
+  // The list of columns that hold group figures (each can be switched on/off, overriding the automatic choice).
+  function renderGroupFigureCols(){
+    const el = document.getElementById('groupFigureCols');
+    const cands = groupFigureCandidates();
+    const on = new Set(groupFigureNames());
+    el.innerHTML = cands.length ? cands.map(c => `
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
+        <input type="checkbox" class="group-fig" data-name="${escapeHtml(c.name)}" ${on.has(c.name) ? 'checked' : ''}> ${escapeHtml(c.name)}
+      </label>`).join('') : '<em style="font-size:12px;color:var(--ink-soft);">Tick some columns above, or add a computed column that uses the group totals.</em>';
+    el.querySelectorAll('.group-fig').forEach(cb => cb.addEventListener('change', () => {
+      groupFigureOverrides[cb.dataset.name] = cb.checked;
+      renderGroupFigureCols();          // a column that other computed columns are built on can change what else counts
+    }));
+  }
+
   // The consolidation settings panel.
   function renderConsolidateUI(){
     document.getElementById('consolidateEnabled').checked = consolidateEnabled;
@@ -1738,6 +1817,13 @@
     document.getElementById('consolidateModeKeep').checked = consolidateMode === 'keep';
     document.getElementById('consolidateCombineBox').classList.toggle('hidden', consolidateMode === 'keep');
     document.getElementById('consolidateKeepBox').classList.toggle('hidden', consolidateMode !== 'keep');
+
+    document.getElementById('groupShowFirst').checked = groupShow === 'first';
+    document.getElementById('groupShowLast').checked = groupShow === 'last';
+    document.getElementById('groupShowEvery').checked = groupShow === 'every';
+    document.getElementById('groupTogether').checked = groupTogether;
+    document.getElementById('groupFigureBox').classList.toggle('hidden', groupShow === 'every');
+    renderGroupFigureCols();
 
     // columns that can get a "Group total" (everything except the identifiers)
     const gcEl = document.getElementById('consolidateGroupCols');
@@ -1790,6 +1876,12 @@
   document.getElementById('consolidateModeKeep').addEventListener('change', e => {
     if (e.target.checked){ consolidateMode = 'keep'; renderConsolidateUI(); afterConsolidateChange(); }
   });
+  ['First','Last','Every'].forEach(k => {
+    document.getElementById('groupShow' + k).addEventListener('change', e => {
+      if (e.target.checked){ groupShow = k.toLowerCase(); document.getElementById('groupFigureBox').classList.toggle('hidden', groupShow === 'every'); }
+    });
+  });
+  document.getElementById('groupTogether').addEventListener('change', e => { groupTogether = e.target.checked; });
   document.getElementById('consolidateAddCount').addEventListener('change', e => {
     consolidateAddCount = e.target.checked; afterConsolidateChange();
   });
@@ -1801,6 +1893,7 @@
   // Pure computation — returns {headers, rows, stats}, doesn't touch the page.
   function computeCleaned(){
     const dataRows = rawRows.slice(1);
+    rowGroupKeys = new WeakMap();
 
     // 1. remove repeated heading rows. A row counts as a repeated heading when it matches the
     //    heading row tolerantly — ignoring case, spacing, punctuation and line breaks — in most
@@ -1977,7 +2070,11 @@
       const finalLabelOrder = [...orderedLabels, ...remainingLabels];
       const newIdxOrder = finalLabelOrder.map(label => workingHeaders.indexOf(label));
       workingHeaders = newIdxOrder.map(i => workingHeaders[i]);
-      workingRows = workingRows.map(r => newIdxOrder.map(i => r[i]));
+      workingRows = workingRows.map(r => {
+        const nr = newIdxOrder.map(i => r[i]);
+        if (rowGroupKeys.has(r)) rowGroupKeys.set(nr, rowGroupKeys.get(r));
+        return nr;
+      });
     }
 
     // 11. sort rows by the configured priority-ordered fields (first field wins ties broken by
@@ -2006,6 +2103,24 @@
         }
         return 0;
       });
+    }
+
+    // 11b. show group figures once per group ('keep' mode). Done after conditions and sorting, so "first" / "last" mean
+    //      the first / last row of the group in the FINAL order; the group's other rows leave those cells empty, so a
+    //      column of group totals adds up to the right grand total instead of counting each group several times.
+    if (consolidateEnabled && consolidateMode === 'keep' && groupShow !== 'every'){
+      const labelOf = n => { const cfg = colConfig.find(c => c.name === n); return cfg && cfg.rename && cfg.rename.trim() ? cfg.rename.trim() : n; };
+      const figIdx = groupFigureNames().map(n => workingHeaders.indexOf(labelOf(n))).filter(i => i >= 0);
+      if (figIdx.length){
+        const seen = new Set();
+        const walk = groupShow === 'last' ? workingRows.map((_, i) => workingRows.length - 1 - i) : workingRows.map((_, i) => i);
+        walk.forEach(i => {
+          const r = workingRows[i], key = rowGroupKeys.get(r);
+          if (key === undefined) return;
+          if (!seen.has(key)){ seen.add(key); return; }       // the row that keeps the figures
+          figIdx.forEach(ci => { r[ci] = ''; });
+        });
+      }
     }
 
     // 12. renumber serial column — done last so the numbers reflect the FINAL row order
@@ -2041,7 +2156,8 @@
       ? `; ${cn.blankKeyRows} row${cn.blankKeyRows === 1 ? '' : 's'} with a blank identifier cell stand${cn.blankKeyRows === 1 ? 's' : ''} on ${cn.blankKeyRows === 1 ? 'its' : 'their'} own` : '';
     document.getElementById('consolidateNote').textContent = !cn ? ''
       : cn.mode === 'keep'
-        ? `All ${cn.from} rows kept; added ${cn.addedCols} group column${cn.addedCols === 1 ? '' : 's'} across ${cn.groupCount} groups, matched on ${cn.keys.join(' + ')}${standAlone}.`
+        ? `All ${cn.from} rows kept; added ${cn.addedCols} group column${cn.addedCols === 1 ? '' : 's'} across ${cn.groupCount} groups, matched on ${cn.keys.join(' + ')}${standAlone}`
+          + (groupShow === 'every' ? '.' : `; group figures shown once per group, on its ${groupShow} row.`)
         : `Consolidated ${cn.from} rows into ${cn.to}, matched on ${cn.keys.join(' + ')}${standAlone}.`;
     document.getElementById('resultSheetName').textContent =
       sheetStates.length > 1 && sheetStates[activeSheet] ? ' \u2014 sheet: ' + sheetStates[activeSheet].name : '';
